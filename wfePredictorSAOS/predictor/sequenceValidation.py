@@ -29,7 +29,7 @@ pupil_mask  = dataset_list_val[0].sum(axis=0) != 0
 nSubap = seq_real.shape[-1]  # W
 
 model = SHWFS_TCN(n_subap=nSubap, emb=128, tcn_layers=4, tcn_kernel=3, dropout=0.3).to(device)
-state = torch.load("C:/Users/nicolas/Documents/code/best_model_T8.pt", map_location="cpu")
+state = torch.load("C:/Users/nicolas/Documents/code/wfePredictorSAOS/best_model_T8.pt", map_location="cpu")
 model.load_state_dict(state)
 
 m_model, m_base, e_model, e_base = eval_sequence_T8(
