@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import weight_norm
 
 # -----------------------------
 # Utils: Causal Conv1d helper
@@ -17,31 +18,42 @@ class Chomp1d(nn.Module):
 
 
 class TemporalBlock(nn.Module):
-    """
-    Typical TCN block: dilated causal Conv1d + residual connection.
-    """
-    def __init__(self, in_ch, out_ch, kernel_size=3, dilation=1, dropout=0.0):
+    def __init__(self, in_ch, out_ch, kernel_size=3, dilation=1, dropout=0.0, gn_groups=8, use_wn=True):
         super().__init__()
-        padding = (kernel_size - 1) * dilation  # left padding (implemented via full padding + chomp)
-        self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size,
-                               padding=padding, dilation=dilation)
+        padding = (kernel_size - 1) * dilation
+
+        Conv = nn.Conv1d
+        self.conv1 = Conv(in_ch, out_ch, kernel_size, padding=padding, dilation=dilation, bias=False)
+        self.conv2 = Conv(out_ch, out_ch, kernel_size, padding=padding, dilation=dilation, bias=False)
+        if use_wn:
+            self.conv1 = weight_norm(self.conv1)
+            self.conv2 = weight_norm(self.conv2)
+
+        def GN(c):
+            g = min(gn_groups, c)
+            while c % g != 0 and g > 1:
+                g -= 1
+            return nn.GroupNorm(g, c)
+
         self.chomp1 = Chomp1d(padding)
-        self.conv2 = nn.Conv1d(out_ch, out_ch, kernel_size,
-                               padding=padding, dilation=dilation)
+        self.gn1 = GN(out_ch)
+
         self.chomp2 = Chomp1d(padding)
+        self.gn2 = GN(out_ch)
 
         self.dropout = nn.Dropout(dropout)
-        self.downsample = nn.Conv1d(in_ch, out_ch, 1) if in_ch != out_ch else None
+        self.downsample = nn.Conv1d(in_ch, out_ch, 1, bias=False) if in_ch != out_ch else None
 
     def forward(self, x):
-        # x: (B, C, T) causal
         y = self.conv1(x)
         y = self.chomp1(y)
+        y = self.gn1(y)
         y = F.gelu(y)
         y = self.dropout(y)
 
         y = self.conv2(y)
         y = self.chomp2(y)
+        y = self.gn2(y)
         y = F.gelu(y)
         y = self.dropout(y)
 
@@ -72,41 +84,56 @@ class TemporalConvNet(nn.Module):
 # Spatial encoder per frame
 # -----------------------------
 class SpatialEncoder(nn.Module):
-    def __init__(self, in_ch=2, base=32, emb=256):
+    def __init__(self, in_ch=2, base=32, emb=256, gn_groups=8):
         super().__init__()
+        # Ajusta grupos para que divida a los canales
+        def GN(c):
+            g = min(gn_groups, c)
+            while c % g != 0 and g > 1:
+                g -= 1
+            return nn.GroupNorm(g, c)
+
         self.net = nn.Sequential(
-            nn.Conv2d(in_ch, base, 3, padding=1),
+            nn.Conv2d(in_ch, base, 3, padding=1, bias=False),
+            GN(base),
             nn.GELU(),
-            nn.Conv2d(base, base, 3, padding=1),
+
+            nn.Conv2d(base, base, 3, padding=1, bias=False),
+            GN(base),
             nn.GELU(),
-            nn.Conv2d(base, 2*base, 3, stride=2, padding=1),  # downsample
+
+            nn.Conv2d(base, 2*base, 3, stride=2, padding=1, bias=False),
+            GN(2*base),
             nn.GELU(),
-            nn.Conv2d(2*base, 2*base, 3, padding=1),
+
+            nn.Conv2d(2*base, 2*base, 3, padding=1, bias=False),
+            GN(2*base),
             nn.GELU(),
-            nn.AdaptiveAvgPool2d((1, 1)),  # (B, 2*base, 1, 1)
+
+            nn.AdaptiveAvgPool2d((1, 1)),
         )
         self.proj = nn.Linear(2*base, emb)
 
     def forward(self, x):
-        # x: (B, 2, H, W)
         h = self.net(x).squeeze(-1).squeeze(-1)  # (B, 2*base)
-        return self.proj(h)  # (B, emb)
+        return self.proj(h)                      # (B, emb)
 
 
 # -----------------------------
 # Full model: CNN + TCN + head
 # -----------------------------
 class SHWFS_TCN(nn.Module):
-    def __init__(self, n_subap, emb=256, tcn_layers=4, tcn_kernel=3, dropout=0.0):
+    def __init__(self, n_subap, emb=256, tcn_layers=4, tcn_kernel=3, dropout=0.0, in_norm=True):
         super().__init__()
         self.n_subap = n_subap
+
+        self.in_norm = nn.GroupNorm(2, 2) if in_norm else None  # normaliza (B,2,H,W) por canal
+
         self.spatial = SpatialEncoder(in_ch=2, base=16, emb=emb)
 
-        # TCN: constant channels emb -> emb
         channels = [emb] + [emb] * tcn_layers
         self.tcn = TemporalConvNet(channels, kernel_size=tcn_kernel, dropout=dropout)
 
-        # Head to map back to (2, H, W)
         self.head = nn.Sequential(
             nn.Linear(emb, emb),
             nn.GELU(),
@@ -114,44 +141,39 @@ class SHWFS_TCN(nn.Module):
         )
 
     def forward(self, x):
-        """
-        x: (B, T, 2*nSubap, nSubap) or (B, T, 2, nSubap, nSubap)
-        """
         if x.dim() == 4:
-            # (B, T, 2H, W) -> (B, T, 2, H, W)
             B, T, HH, W = x.shape
             H = HH // 2
             xX = x[:, :, :H, :]
             xY = x[:, :, H:, :]
-            x = torch.stack([xX, xY], dim=2)  # (B, T, 2, H, W)
+            x = torch.stack([xX, xY], dim=2)  # (B,T,2,H,W)
 
-        B, T, C, H, W = x.shape  # C=2
+        B, T, C, H, W = x.shape
         assert H == self.n_subap and W == self.n_subap and C == 2
 
-        # Spatial encoder per frame
-        feats = []
-        for t in range(T):
-            feats.append(self.spatial(x[:, t]))  # (B, emb)
-        feats = torch.stack(feats, dim=-1)      # (B, emb, T)
+        # input norm por frame dentro del modelo
+        if self.in_norm is not None:
+            x = x.reshape(B*T, C, H, W)
+            x = self.in_norm(x)
+            x = x.view(B, T, C, H, W)
 
-        # Temporal TCN
-        z = self.tcn(feats)                     # (B, emb, T)
+        # (opcional) vectorización del encoder espacial para quitar el loop:
+        x_bt = x.reshape(B*T, C, H, W)
+        f_bt = self.spatial(x_bt)  # (B*T, emb)
+        feats = f_bt.view(B, T, -1).transpose(1, 2)  # (B, emb, T)
 
-        # Use last time step (t) to predict t+horizon
-        z_last = z[:, :, -1]                    # (B, emb)
-
-        y = self.head(z_last).view(B, 2, H, W)  # (B, 2, H, W)
+        z = self.tcn(feats)          # (B, emb, T)
+        z_last = z[:, :, -1]         # (B, emb)
+        y = self.head(z_last).view(B, 2, H, W)
         return y
-
 
 # -----------------------------
 # Example windowed dataset
 # -----------------------------
 class WindowDataset(torch.utils.data.Dataset):
-    def __init__(self, seq, n_subap, T=8, horizon=2, mask2H_W=None, stride=1):
+    def __init__(self, seq, n_subap, T=8, horizon=2, stride=1):
         """
         seq: torch tensor (N, 2*nSubap, nSubap) with N consecutive frames
-        mask2H_W: (2*nSubap, nSubap) float/bool mask (1=valid, 0=invalid)
         """
         super().__init__()
         self.seq = seq
@@ -160,22 +182,9 @@ class WindowDataset(torch.utils.data.Dataset):
         self.n_subap = n_subap
         self.stride = stride
 
-        self.mask2 = None
-        if mask2H_W is not None:
-            if not isinstance(mask2H_W, torch.Tensor):
-                mask2H_W = torch.from_numpy(mask2H_W)
-            mask2H_W = mask2H_W.float()
-            H = n_subap
-            mX = mask2H_W[:H, :]
-            mY = mask2H_W[H:, :]
-            self.mask2 = torch.stack([mX, mY], dim=0)  # (2,H,W)
-
-        # Valid indices: need [i-T+1 .. i] and target [i+h]
         self.i0 = T - 1
         self.i1 = len(seq) - horizon - 1
-
-        # Precompute valid indices using stride
-        self.indices = list(range(self.i0, self.i1 + 1, self.stride))        
+        self.indices = list(range(self.i0, self.i1 + 1, self.stride))
 
     def __len__(self):
         return len(self.indices)
@@ -194,10 +203,6 @@ class WindowDataset(torch.utils.data.Dataset):
         yX = y[:H, :]
         yY = y[H:, :]
         y = torch.stack([yX, yY], dim=0)         # (2,H,W)
-
-        if self.mask2 is not None:
-            x = x * self.mask2.unsqueeze(0)
-            y = y * self.mask2
 
         return x, y
 
@@ -264,13 +269,9 @@ def eval_one_epoch(model, loader, device="cuda", mask2=None):
     return total / max(n, 1)
 
 @torch.no_grad()
-def evaluate_sequence(model, seq, nSubap, T, horizon, mask2=None, std=None, device="cuda"):
+def evaluate_sequence(model, seq, nSubap, T, horizon, mask2=None, device="cuda"):
     """
     seq: (N, 2H, W) torch tensor
-    returns:
-        preds: list of predicted slopes
-        targets: list of true slopes
-        mse_mean: scalar
     """
     model.eval()
     seq = seq.to(device)
@@ -283,39 +284,72 @@ def evaluate_sequence(model, seq, nSubap, T, horizon, mask2=None, std=None, devi
     targets = []
 
     for t in range(T-1, N-horizon):
-        # Build window
         window = seq[t-T+1:t+1]  # (T,2H,W)
 
         xX = window[:, :H, :]
         xY = window[:, H:, :]
         x = torch.stack([xX, xY], dim=1)  # (T,2,H,W)
+        x = x.unsqueeze(0)                # (1,T,2,H,W)
 
-        if mask2 is not None:
-            x = x * mask2.unsqueeze(0)
-
-        if std is not None:
-            x = x / std.view(1,2,1,1)
-
-        x = x.unsqueeze(0)  # (1,T,2,H,W)
-
-        pred = model(x).squeeze(0)  # (2,H,W)
+        pred = model(x).squeeze(0)        # (2,H,W)
 
         target = seq[t+horizon]
         yX = target[:H, :]
         yY = target[H:, :]
-        target = torch.stack([yX, yY], dim=0)
+        target = torch.stack([yX, yY], dim=0)  # (2,H,W)
 
-        if mask2 is not None:
-            target = target * mask2
+        if mask2 is None:
+            mse = F.mse_loss(pred, target, reduction="mean").item()
+        else:
+            mse = masked_mse(pred.unsqueeze(0), target.unsqueeze(0), mask2).item()
 
-        if std is not None:
-            target = target / std
-
-        mse = F.mse_loss(pred, target, reduction="mean")
-        errors.append(mse.item())
-
+        errors.append(mse)
         preds.append(pred.cpu())
         targets.append(target.cpu())
 
-    mse_mean = sum(errors) / len(errors)
+    mse_mean = sum(errors) / max(len(errors), 1)
     return preds, targets, mse_mean
+
+@torch.no_grad()
+def eval_model_and_baseline(model, seq, nSubap, T=8, horizon=2, mask2=None, device="cuda"):
+    """
+    seq: (N, 2H, W)
+    mask2: (2, H, W) float {0,1}
+    baseline: persistencia (frame t)
+    """
+    model.eval()
+    seq = seq.to(device)
+    H = nSubap
+    N = seq.shape[0]
+
+    e_model, e_base = [], []
+
+    for t in range(T-1, N-horizon):
+        window = seq[t-T+1:t+1]          # (T,2H,W)
+        target2H = seq[t+horizon]        # (2H,W)
+
+        target = torch.stack([target2H[:H, :], target2H[H:, :]], dim=0)  # (2,H,W)
+        base2H = seq[t]
+        base = torch.stack([base2H[:H, :], base2H[H:, :]], dim=0)        # (2,H,W)
+
+        # modelo
+        xX = window[:, :H, :]
+        xY = window[:, H:, :]
+        x = torch.stack([xX, xY], dim=1).unsqueeze(0)  # (1,T,2,H,W)
+        pred = model(x).squeeze(0)                     # (2,H,W)
+
+        if mask2 is None:
+            em = torch.mean((pred - target) ** 2).item()
+            eb = torch.mean((base - target) ** 2).item()
+        else:
+            # masked mse inline (evita depender de otra función)
+            m = mask2.to(device).unsqueeze(0)  # (1,2,H,W)
+            em = (((pred.unsqueeze(0) - target.unsqueeze(0)) ** 2) * m).sum().item() / (m.sum().item() + 1e-12)
+            eb = (((base.unsqueeze(0) - target.unsqueeze(0)) ** 2) * m).sum().item() / (m.sum().item() + 1e-12)
+
+        e_model.append(em)
+        e_base.append(eb)
+
+    m_model = sum(e_model) / max(len(e_model), 1)
+    m_base  = sum(e_base) / max(len(e_base), 1)
+    return m_model, m_base, e_model, e_base
