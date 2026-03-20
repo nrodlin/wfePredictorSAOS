@@ -9,31 +9,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 
 from wfePredictorSAOS.predictor.slopesDataset import SlopesDataset
-
-
-# ==============================================================================
-# MODELO
-# ==============================================================================
-class IndependentSlopeLSTM(nn.Module):
-    def __init__(self, hidden_size=32, num_layers=1):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=1,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-        )
-        self.head = nn.Linear(hidden_size, 1)
-
-    def forward(self, x):
-        B, T, N = x.shape
-        x = x.permute(0, 2, 1)
-        x = x.reshape(B * N, T, 1)
-        out, _ = self.lstm(x)
-        last = out[:, -1, :]
-        y = self.head(last)
-        return y.reshape(B, N)
-
+from wfePredictorSAOS.predictor.independentLSTMModel import IndependentSlopeLSTM
 
 # ==============================================================================
 # NORMALIZACIÓN
