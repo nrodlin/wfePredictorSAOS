@@ -46,7 +46,7 @@ nModes = None # [nModesASM]
 im_stroke = [5e-7] # in meters
 
 # Loading files:
-load_filename_atm = os.path.join(os.path.expanduser("~"), 'simulations/phase_screens/predictor_ps_atm1_draw1.h5')
+load_filename_atm = os.path.join(os.path.expanduser("~"), 'simulations/phase_screens/predictor_ps_atm4_draw1.h5')
 load_filename_modalBasis = os.path.join(os.path.expanduser("~"), 'simulations/modal_basis/predictor_modalBasis.h5')
 load_filename_IM = os.path.join(os.path.expanduser("~"), 'simulations/interaction_matrix/predictor_IM.h5')
 
@@ -59,7 +59,7 @@ save_filename_IM = os.path.join(os.path.expanduser("~"), 'simulations/interactio
 
 ## Define data sharepoint
 
-sharepoint = Sharepoint(test_logger.logger, port=5573, atm=1, atm_per_dir=0, dm=1, dm_per_dir=1, slopes=1, wfs=1, wfs_frame=0, sci=1, sci_frame=1)
+# sharepoint = Sharepoint(test_logger.logger, port=5573, atm=1, atm_per_dir=0, dm=1, dm_per_dir=1, slopes=1, wfs=1, wfs_frame=0, sci=1, sci_frame=1)
 
 ## Define the savingpoint
 savepoint = Savepoint(file_path='', atm=1, atm_per_dir=1, dm=1, dm_per_dir=1, slopes=1, wfs=1, wfs_frame=1, sci=1, sci_frame=1, only_metrics=1, logger=test_logger.logger)
@@ -69,7 +69,7 @@ t0 = time.time()
 
 diameter = 4.149 # in [m]
 obs_diameter = 1.3 # in [m]
-sampling_time = 1/2000 # in [s]
+sampling_time = 1/1000 # in [s]
 n_subaperture_red = 36
 resolution = n_subaperture_red * 4 # resolution of the phase screen in [px]
 pixel_size = diameter / resolution
@@ -123,8 +123,8 @@ sun_red = ExtendedSource(optBand = 'R',
 
 ## Deformable mirrors:
 
-asm_params = {'dynamicModel': os.path.join(os.path.expanduser("~"), 'simulations/MirrorModels/asm_discrete_model.h5'), 'validActThreshpercentage': 0.5}
-# asm_params = {'dynamicModel': '', 'validActThreshpercentage': 0.5}
+# asm_params = {'dynamicModel': os.path.join(os.path.expanduser("~"), 'simulations/MirrorModels/asm_discrete_model.h5'), 'validActThreshpercentage': 0.5}
+asm_params = {'dynamicModel': '', 'validActThreshpercentage': 0.5}
 
 asm = DeformableMirror(telescope=est_tel,
                         nActs=n_subaperture_red+1,
@@ -137,9 +137,9 @@ dms = [asm]
 
 ## Vibration
 
-red_vibration_file = '/home/oopao/simulations/VibrationsSource/EST_vibration_1.h5'
+red_vibration_file = '/home/oopao/simulations/VibrationsSource/EST_vibration_1_video_4mas.h5'
 
-red_vibrations = None#Vibration(est_tel, red_vibration_file, test_logger.logger)
+red_vibrations = None # Vibration(est_tel, red_vibration_file, test_logger.logger)
 
 ## Wavefront Sensor
 
@@ -231,7 +231,7 @@ for i in range(nIterations):
     for j in range(len(dms)):
         dms[j].updateDMShape(cmd[j])
     # Share data with the GUI
-    sharepoint.shareData(scao_light_path_list, i, [atm], dms)              
+    # sharepoint.shareData(scao_light_path_list, i, [atm], dms)              
  
     # Save Data
     savepoint.save([atm], i)
