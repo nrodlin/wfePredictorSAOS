@@ -1,5 +1,7 @@
 from datetime import datetime
 import time
+import yaml
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,22 +33,9 @@ test_logger = LoggingHelper(logging.INFO)
 
 nIterations = 1000
 
-generate_new_atm = True
-
-# Loading files:
-load_filename_atm = '/home/oopao/simulations/phase_screens/20260222_1540.h5'
-
-# Saving files
-date = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-
-save_filename_atm = '/home/oopao/simulations/phase_screens/' + date
-
 # Define data sharepoint
 
 #sharepoint = Sharepoint(test_logger.logger, port=5572, slopes=1)
-
-# Define the savingpoint
-savepoint = Savepoint(file_path='', slopes=1, error=1, logger=test_logger.logger)
 
 # Define EST
 t0 = time.time()
@@ -71,80 +60,88 @@ spider_thickness = 0.060 # in [m]
 
 # est_tel.apply_spiders(spider_angle, spider_thickness)
 
-# Atmosphere:
+with open('/home/nlinares/code/wfePredictorSAOS/trainingDataSimulations/atmosphereCases.yaml', 'r') as f:
+    atm_cases = yaml.safe_load(f)
 
-atm = Atmosphere(r0 = 0.21,
-                 L0= 25,
-                 fractionalR0=[0.48, 0.11, 0.22, 0.11, 0.09],
-                 altitude=[100, 1500, 5000, 10000, 15000],
-                 windDirection=[60, 260, 135, 75, 345],
-                 windSpeed=[12, 4, 45, 18, 8],
-                 telescope=est_tel,
-                 zenith = 60,
-                 logger=test_logger.logger)
+for atm_name, draws in atm_cases.items():
+    atm_num = atm_name.replace('atm', '')
+    for draw_name, kwargs in draws.items():
+        draw_num = draw_name.replace('draw', '')
+        
+        test_logger.logger.info(f'--- Starting Simulation for {atm_name} {draw_name} ---')
+        t_case_start = time.time()
 
-if generate_new_atm:
-    atm.initializeAtmosphere()
-    atm.save(save_filename_atm)
-else:
-    atm.load(load_filename_atm)
+        # Define the savingpoint
+        user_home = os.path.expanduser('~')
+        savepoint = Savepoint(file_path=f"{user_home}/simulations/results/res_atm{atm_num}_draw{draw_num}.h5", slopes=1, error=1, logger=test_logger.logger)
+        save_filename_atm = f'{user_home}/simulations/phase_screens/ps_atm{atm_num}_draw{draw_num}.h5'
+        
+        # Atmosphere:
+        atm = Atmosphere(r0=kwargs['r0'],
+                         L0=kwargs['L0'],
+                         fractionalR0=kwargs['fractionalR0'],
+                         altitude=kwargs['altitude'],
+                         windDirection=kwargs['windDirection'],
+                         windSpeed=kwargs['windSpeed'],
+                         telescope=est_tel,
+                         zenith=kwargs['zenith'],
+                         logger=test_logger.logger)
 
-# Sources:
-sun = ExtendedSource(optBand = 'R',
-                     coordinates=[0, 0],
-                     nSubDirs=3,
-                     fov=9.269,
-                     subDir_margin=4.0,
-                     patch_padding=5.0,
-                     logger=test_logger.logger)
+        atm.initializeAtmosphere()
+        atm.save(save_filename_atm)
 
-# Wavefront Sensor
+        # Sources:
+        sun = ExtendedSource(optBand='R',
+                             coordinates=[0, 0],
+                             nSubDirs=3,
+                             fov=9.269,
+                             subDir_margin=4.0,
+                             patch_padding=5.0,
+                             logger=test_logger.logger)
 
-shwfs_0 = CorrelatingShackHartmann(telescope=est_tel,
-                                    src=sun,
-                                    lightRatio=0.9,
-                                    nSubap=n_subaperture,
-                                    plate_scale=0.403,
-                                    fieldOfView=9.269,
-                                    guardPx=2,
-                                    fft_fieldOfView_oversampling=0.5,
-                                    use_brightest=9,
-                                    unit_in_rad=False,
-                                    logger=test_logger.logger)
+        # Wavefront Sensor
+        shwfs_0 = CorrelatingShackHartmann(telescope=est_tel,
+                                           src=sun,
+                                           lightRatio=0.9,
+                                           nSubap=n_subaperture,
+                                           plate_scale=0.403,
+                                           fieldOfView=9.269,
+                                           guardPx=2,
+                                           fft_fieldOfView_oversampling=0.5,
+                                           use_brightest=9,
+                                           unit_in_rad=False,
+                                           logger=test_logger.logger)
 
-# Build the Light Path
+        # Build the Light Path
+        scao_light_path_list = []
+        # Create red branch with 0 delay samples
+        scao_light_path_list.append(LightPath(test_logger.logger))
+        scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=None, wfs=shwfs_0, ncpa=None, sci=None, delay=0)
 
-scao_light_path_list = []
-# Create red branch with 0 delay samples
-scao_light_path_list.append(LightPath(test_logger.logger))
-scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=None, wfs=shwfs_0, ncpa=None, sci=None, delay=0)
+        # Create red branch with 2 delay samples
+        scao_light_path_list.append(LightPath(test_logger.logger))
+        scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=None, wfs=shwfs_0, ncpa=None, sci=None, delay=2)
 
-# Create red branch with 2 delay samples
-scao_light_path_list.append(LightPath(test_logger.logger))
-scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=None, wfs=shwfs_0, ncpa=None, sci=None, delay=2)
+        lightPathTasks = []
+        for i in range(len(scao_light_path_list)):
+            lightPathTasks.append(delayed(scao_light_path_list[i].propagate)(True))
 
-lightPathTasks = []
-for i in range(len(scao_light_path_list)):
-    lightPathTasks.append(delayed(scao_light_path_list[i].propagate)(True))
+        test_logger.logger.info(f'Beginning SCAO loop for {atm_name} {draw_name}')
 
-test_logger.logger.info(f'The Modules initialization took {time.time()-t0} [s]')
+        # SCAO loop
+        for i in range(nIterations):
+            est_tel.logger.info(f'Iteration {i+1}')
+            # Update the atmosphere
+            atm.update()
+            # Propagate the light
+            Parallel(n_jobs=2, prefer='threads')(lightPathTasks)
+            
+            # Save Data
+            savepoint.save(scao_light_path_list, i)
 
-test_logger.logger.info('Beginning simulation')
-
-# SCAO loop
-for i in range(nIterations):
-    est_tel.logger.info(f'Iteration {i+1}')
-    # Update the atmosphere
-    atm.update()
-    # Propagate the light
-    Parallel(n_jobs=2, prefer='threads')(lightPathTasks)
-    # Share data with the GUI
-    # sharepoint.shareData(scao_light_path_list, i)              
- 
-    # Save Data
-    savepoint.save(scao_light_path_list, i)
-
-test_logger.logger.info('Simulation ended.')
+        test_logger.logger.info(f'Simulation ended for {atm_name} {draw_name}.')
+        t_case_end = time.time()
+        test_logger.logger.info(f'Elapsed time for {atm_name} {draw_name}: {t_case_end - t_case_start:.2f} [s]')
 
 # Force destructor call for the qeue of logs
 

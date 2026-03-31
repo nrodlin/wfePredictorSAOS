@@ -173,3 +173,29 @@ atm = Atmosphere(r0 = 0.21,
                  telescope=est_tel,
                  zenith = 60,
                  logger=test_logger.logger)
+
+## Case 8: r0 15 cm, z = 30, [0.40, 0.25, 0.15, 0.10, 0.10], AI created
+
+# Draw 1
+
+atm = Atmosphere(r0 = 0.15,
+                 L0= 25,
+                 fractionalR0=[0.40, 0.25, 0.15, 0.10, 0.10],
+                 altitude=[100, 1500, 5000, 10000, 15000],
+                 windDirection=[15, 105, 230, 70, 340],
+                 windSpeed=[11, 15, 22, 18, 30],
+                 telescope=est_tel,
+                 zenith = 30,
+                 logger=test_logger.logger)
+
+# Draw 2
+
+atm = Atmosphere(r0 = 0.15,
+                 L0= 25,
+                 fractionalR0=[0.40, 0.25, 0.15, 0.10, 0.10],
+                 altitude=[100, 1500, 5000, 10000, 15000],
+                 windDirection=[85, 190, 300, 150, 45],
+                 windSpeed=[11, 15, 22, 18, 30],
+                 telescope=est_tel,
+                 zenith = 30,
+                 logger=test_logger.logger)
