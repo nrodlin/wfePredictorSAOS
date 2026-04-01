@@ -1,76 +1,73 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import os
+import glob
 
-## Comparar mejora al hacer la predicción vs medida 2 instantes tarde
-atmosphere = 4
-nDraws = 3
-path = '/home/oopao/simulations/results/predictor/'
+path = os.path.expanduser('~/simulations/results/predictor_ol/')
 delay = 2
 
-error_prediction_draw = []
-error_delay_draw      = []
+# Search for all truth files to identify available cases
+truth_files = glob.glob(os.path.join(path, 'truth_val_*.npy'))
 
-for i in range(nDraws):
-    prediction_file = f'prediction_atm{atmosphere}_draw{i+1}.npy'
-    truth_file      = f'truth_atm{atmosphere}_draw{i+1}.npy'
+results = []
 
-    prediction = np.load(path + prediction_file)
-    truth      = np.load(path + truth_file)
-
+for truth_path in truth_files:
+    filename = os.path.basename(truth_path)
+    # filename format: truth_val_{Vibr|noVibr}_{atm}_{draw}.npy
+    parts = filename.replace('.npy', '').split('_')
+    if len(parts) != 5:
+        continue
+        
+    vibr_label = parts[2]
+    atm_label = parts[3]
+    draw_label = parts[4]
+    
+    pred_filename = filename.replace('truth', 'prediction')
+    pred_path = os.path.join(path, pred_filename)
+    
+    if not os.path.exists(pred_path):
+        continue
+        
+    truth = np.load(truth_path)
+    prediction = np.load(pred_path)
+    
     delayed_truth = truth[delay:,:]
-
+    
     error_prediction = []
     error_delay      = []
     
     for j in range(prediction.shape[0]):
-        # Compare the erorr of the prediction
         error_prediction.append(np.sqrt(np.mean((prediction[j,:]-truth[j, :])**2)))
     for j in range(delayed_truth.shape[0]):
-        # Compute the error assuming a delayed measurement
-        error_delay.append(np.sqrt(np.mean((delayed_truth[j,:]-truth[j, :])**2))) # delayed_truth is 2 samples ahead --> case without delay w.r.t truth
+        error_delay.append(np.sqrt(np.mean((delayed_truth[j,:]-truth[j, :])**2)))
+        
+    avg_pred = np.mean(error_prediction)
+    std_pred = np.std(error_prediction)
     
-    error_prediction_draw.append(error_prediction.copy())
-    error_delay_draw.append(error_delay.copy())
+    avg_delay = np.mean(error_delay)
+    std_delay = np.std(error_delay)
+    
+    results.append({
+        'atm': atm_label,
+        'draw': draw_label,
+        'vibr': vibr_label,
+        'avg_pred': avg_pred,
+        'std_pred': std_pred,
+        'avg_delay': avg_delay,
+        'std_delay': std_delay
+    })
 
-# ---- Subplots ----
-fig, axs = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+# Sort results
+results.sort(key=lambda x: (x['vibr'], int(x['atm'].replace('atm', '')), int(x['draw'].replace('draw', ''))))
 
-handles = []
-labels = []
+print("="*105)
+print(f"{'Atmosphere':<12} {'Draw':<8} {'Vibration':<10} | {'Pred Error (px)':<20} | {'Delay Error (px)':<20} | {'Improvement':<12}")
+print("-" * 105)
 
-# --- Prediction error ---
-for idx_fila, fila in enumerate(error_prediction_draw):
-    line, = axs[0].plot(fila)  # sin label aquí
-    handles.append(line)
-    labels.append(f"Draw {idx_fila+1}")
+for r in results:
+    pred_str = f"{r['avg_pred']:.4f} ± {r['std_pred']:.4f}"
+    delay_str = f"{r['avg_delay']:.4f} ± {r['std_delay']:.4f}"
+    impr = (r['avg_delay'] - r['avg_pred']) / r['avg_delay'] * 100
+    impr_str = f"{impr:+.1f}%"
+    print(f"{r['atm']:<12} {r['draw']:<8} {r['vibr']:<10} | {pred_str:<20} | {delay_str:<20} | {impr_str:<12}")
 
-axs[0].set_ylabel("Prediction Error [px]")
-axs[0].set_title("Prediction Error")
-axs[0].grid(True)
-
-# --- Delay error ---
-for idx_fila, fila in enumerate(error_delay_draw):
-    axs[1].plot(fila)  # no label
-
-axs[1].set_xlabel("Sample")
-axs[1].set_ylabel("Delay Error [px]")
-axs[1].set_title("Delay Error")
-axs[1].grid(True)
-
-# --- Global title ---
-fig.suptitle(f"Atmosphere {atmosphere}")
-
-# --- Leyenda única ---
-fig.legend(handles, labels, loc="upper right", ncol=2)
-
-plt.tight_layout()
-plt.show()
-# Print the metrics
-
-print(f'Avrg. prediction error: {np.mean(error_prediction_draw, axis=1)} [px], Std.: {np.std(error_prediction_draw, axis=1)} [px]')
-print(f'Avrg. delay error: {np.mean(error_delay_draw, axis=1)} [px], Std.: {np.std(error_delay_draw, axis=1)} [px]')
-
-print('END')
-
-
-
+print("="*105)
