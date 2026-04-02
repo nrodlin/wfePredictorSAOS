@@ -23,12 +23,12 @@ for folder in folders:
     for file_path in h5_files:
         filename = os.path.basename(file_path)
         
-        # Parses names like: res_0samples_noVibr_atm1_draw1.h5
+        # Parses names like: res_0samples_1kHz_noVibr_atm1_draw1.h5
         parts = filename.replace('.h5', '').split('_')
-        if len(parts) >= 5:
-            vibr_label = parts[2]
-            atm_label = parts[3]
-            draw_label = parts[4]
+        if len(parts) >= 6:
+            vibr_label = parts[3]
+            atm_label = parts[4]
+            draw_label = parts[5]
         else:
             continue
             

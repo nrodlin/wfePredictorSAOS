@@ -184,6 +184,7 @@ for atm_name, draws in atm_cases.items():
     if measure_new_IM:
         im_handler.measure(modal_basis='dh', stroke=im_stroke, nModes=nModes)
         im_handler.save_IM(load_filename_IM)
+    else:
         im_handler.load_IM(load_filename_IM)
 
     controller_kwargs = {'rcond':0.025, 

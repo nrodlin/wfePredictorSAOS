@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Activate the virtual environment or use the absolute python path if needed
-PYTHON_CMD="/home/nlinares/_1kHz.pyenv/versions/3.13.9t/envs/saos/bin/python"
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
 
 echo "================================================"
 echo "Starting Closed-Loop (CL) Simulations"
