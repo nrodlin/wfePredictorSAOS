@@ -148,6 +148,3 @@ OOPAO/M4_model/*.fits
 #pycache files
 *.pyc
 *.cpython-37.pyc
-wfePredictorSAOS/__pycache__/__init__.cpython-313.pyc
-wfePredictorSAOS/__pycache__/__init__.cpython-313.pyc
-wfePredictorSAOS/predictor/__pycache__/__init__.cpython-313.pyc
