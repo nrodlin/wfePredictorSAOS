@@ -25,7 +25,7 @@ from SAOS.ScienceCam import ScienceCam
 from SAOS.Sharepoint import Sharepoint
 from SAOS.Savepoint import Savepoint
 
-from wfePredictorSAOS.predictor.onlinePredictor import OnlineSlopePredictor
+from wfePredictorSAOS.predictor.onlineLinearPredictor import OnlineLinearSlopePredictor
 from atmosphereCases import atm_cases
 
 # Logger:
@@ -44,7 +44,7 @@ im_stroke = [5e-7] # in meters
 
 user_home = os.path.expanduser('~')
 ps_dir = os.path.join(user_home, 'simulations', 'phase_screens')
-res_dir = os.path.join(user_home, 'simulations', 'results', 'cl_2samplesPrediction')
+res_dir = os.path.join(user_home, 'simulations', 'results', 'cl_2samplesLinearPrediction')
 
 os.makedirs(res_dir, exist_ok=True)
 
@@ -106,7 +106,7 @@ for atm_name, draws in atm_cases.items():
     current_case_idx += 1
     
     t_case_start = time.time()
-    test_logger.logger.info(f"=== [{current_case_idx}/{total_cases}] Starting CL 2samplesPredictor Validation for {atm_name} {draw_name} ===")
+    test_logger.logger.info(f"=== [{current_case_idx}/{total_cases}] Starting CL 2samplesLinearPredictor Validation for {atm_name} {draw_name} ===")
 
     atm_file_name = f"ps_val_{atm_name}_{draw_name}.h5"
     atm_file_path = os.path.join(ps_dir, atm_file_name)
@@ -137,7 +137,7 @@ for atm_name, draws in atm_cases.items():
             vibr_label = "noVibr"
             red_vibrations = None
 
-        res_file_name = f"res_2samplesPredictor_{vibr_label}_{atm_name}_{draw_name}.h5"
+        res_file_name = f"res_2samplesLinearPredictor_{vibr_label}_{atm_name}_{draw_name}.h5"
         res_file_path = os.path.join(res_dir, res_file_name)
 
         savepoint = Savepoint(file_path=res_file_path, atm=1, atm_per_dir=1, dm=1, dm_per_dir=1, slopes=1, wfs=1, wfs_frame=1, sci=1, sci_frame=1, only_metrics=1, logger=test_logger.logger)
@@ -197,8 +197,8 @@ for atm_name, draws in atm_cases.items():
 
         controller_kwargs = {'rcond':0.025, 
                             'beta':1e-4,
-                            'gain':[0.4],
-                            'decay':[0.9999],
+                            'gain':[0.25],
+                            'decay':[0.999],
                             'ki':[0.0]}
 
         controller = Controller(telescope=est_tel,
@@ -208,22 +208,21 @@ for atm_name, draws in atm_cases.items():
                                 logger=test_logger.logger,
                                 **controller_kwargs)
 
-        past_horizon = 8
+        past_horizon = 4
         n_slopes = scao_light_path_list[0].slopes_1D.shape[0]
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        predictor = OnlineSlopePredictor(
+        predictor = OnlineLinearSlopePredictor(
             n_slopes=n_slopes,
-            model_path=os.path.join(user_home, 'code', 'wfePredictorSAOS', 'best_model_IndepLSTM.pt'),
             past_horizon=past_horizon,
-            hidden_size=32,
+            steps_ahead=2,
             device=device,
             mean=None,  
             std=None    
         )
 
-        gain = 0.4
-        decay = 0.9999
+        gain = 0.25
+        decay = 0.999
         modal_cmd = torch.zeros((controller.reconstructor[0].shape[0],1), dtype=torch.float64, device=device)
         
         test_logger.logger.info(f'Beginning simulation loop for Validation ({vibr_label})')

@@ -32,13 +32,8 @@ for truth_path in truth_files:
     
     delayed_truth = truth[delay:,:]
     
-    error_prediction = []
-    error_delay      = []
-    
-    for j in range(prediction.shape[0]):
-        error_prediction.append(np.sqrt(np.mean((prediction[j,:]-truth[j, :])**2)))
-    for j in range(delayed_truth.shape[0]):
-        error_delay.append(np.sqrt(np.mean((delayed_truth[j,:]-truth[j, :])**2)))
+    error_prediction = np.sqrt(np.mean((prediction - truth)**2, axis=1))
+    error_delay = np.sqrt(np.mean((delayed_truth - truth[:delayed_truth.shape[0], :])**2, axis=1))
         
     avg_pred = np.mean(error_prediction)
     std_pred = np.std(error_prediction)

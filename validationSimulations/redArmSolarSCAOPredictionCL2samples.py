@@ -43,7 +43,7 @@ im_stroke = [5e-7] # in meters
 
 user_home = os.path.expanduser('~')
 ps_dir = os.path.join(user_home, 'simulations', 'phase_screens')
-res_dir = os.path.join(user_home, 'simulations', 'results')
+res_dir = os.path.join(user_home, 'simulations', 'results', 'cl_2samples')
 
 os.makedirs(res_dir, exist_ok=True)
 
@@ -58,7 +58,7 @@ t0 = time.time()
 
 diameter = 4.149 # in [m]
 obs_diameter = 1.3 # in [m]
-sampling_time = 1/1000 # in [s]
+sampling_time = 1/2000 # in [s]
 n_subaperture_red = 36
 resolution = n_subaperture_red * 4 # resolution of the phase screen in [px]
 pixel_size = diameter / resolution
