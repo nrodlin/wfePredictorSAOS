@@ -4,7 +4,6 @@ import h5py
 import torch
 import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader
-import matplotlib.subplots
 import matplotlib.pyplot as plt
 import numpy as np
 import json
@@ -229,7 +228,7 @@ if __name__ == "__main__":
 
     # ── Paths ─────────────────────────────────────────────────────────────────
     user_home = os.path.expanduser('~')
-    results_path = os.path.join(user_home, "simulations", "results")
+    results_path = os.path.join(user_home, "simulations", "results", "predictorSAOS", "training", "test")
     model_path = "best_model_IndepLSTM.pt"
     
     # ── Hyperparameters ───────────────────────────────────────────────────────

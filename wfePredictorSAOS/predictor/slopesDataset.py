@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-class SlidingWindowDataset(Dataset):
+class SlopesDataset(Dataset):
     def __init__(self, data: list, past_horizon: int, pred_horizon: int = 2):
         """
         data : list
@@ -20,20 +20,20 @@ class SlidingWindowDataset(Dataset):
         self.len_per_case = []
 
         for i in range(len(self.data)):
-            self.len_per_case.append(len(self.data[i]) - past_horizon - pred_horizon +1)
+            self.len_per_case.append(len(self.data[i]) - past_horizon - pred_horizon + 1)
 
         self.len_per_case = np.array(self.len_per_case) 
         
         self.cum_samples = np.cumsum(self.len_per_case)
 
-        self.n_samples = self.len_per_case.sum()
+        self.n_samples = int(self.len_per_case.sum())
 
     def __len__(self):
         return self.n_samples
 
     def __getitem__(self, idx):
         # Figure out in which case is the idx and the local index within the case
-        case = np.searchsorted(self.cum_samples, idx, side='right')
+        case = int(np.searchsorted(self.cum_samples, idx, side='right'))
         start = 0 if case == 0 else self.cum_samples[case - 1]
         local_index = idx - start        
         # Past data
