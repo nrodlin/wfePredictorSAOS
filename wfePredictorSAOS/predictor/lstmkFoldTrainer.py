@@ -1,3 +1,4 @@
+import os
 import h5py
 import numpy as np
 import torch
@@ -225,7 +226,17 @@ if __name__ == "__main__":
     batch_size = 64
     pred_horizon = 2
 
-    base_path = '/home/nlinares/simulations/results/predictorSAOS/training/training_val'
+    dalia_path = '/net/dalia/scratch/nlinares/results/results/predictor/training'
+    local_path = '/home/nlinares/simulations/results/predictorSAOS/training/training_val'
+
+    if os.path.exists(dalia_path):
+        base_path = dalia_path
+    elif os.path.exists(local_path):
+        base_path = local_path
+    else:
+        base_path = dalia_path
+
+    print(f"Data directory: {base_path}\n")
 
     # Read the files and load data grouped by atmosphere (5 atmospheres x 4 simulation datasets)
     filenames_by_atm = [

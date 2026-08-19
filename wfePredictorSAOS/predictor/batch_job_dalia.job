@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=36:00:00
+#SBATCH --job-name=saosDalia
+#SBATCH --output=%j.out
+#SBATCH --error=%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+cd ~/code/wfePredictorSAOS/wfePredictorSAOS/predictor
+
+python lstmkFoldTrainer.py
