@@ -11,4 +11,4 @@
 
 cd ~/code/wfePredictorSAOS/wfePredictorSAOS/predictor
 
-python lstmkFoldTrainer.py
+python -u lstmkFoldTrainer.py
