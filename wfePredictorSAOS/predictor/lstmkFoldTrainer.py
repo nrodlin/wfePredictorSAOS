@@ -226,7 +226,7 @@ if __name__ == "__main__":
     batch_size = 64
     pred_horizon = 2
 
-    dalia_path = '/net/dalia/scratch/nlinares/results/results/predictor/training/training_val'
+    dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/training_val'
     local_path = '/home/nlinares/simulations/results/predictorSAOS/training/training_val'
 
     if os.path.exists(dalia_path):
