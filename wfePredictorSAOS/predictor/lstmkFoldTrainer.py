@@ -223,7 +223,7 @@ if __name__ == "__main__":
     num_layers = [2, 1]
     n_axis = [1, 2]
     max_epochs = 200
-    batch_size = 128
+    batch_size = 16
     pred_horizon = 2
 
     dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/training_val'
