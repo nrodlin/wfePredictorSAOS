@@ -217,13 +217,13 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}\n")
 
-    # Training parameters
-    past_horizon = [4, 8, 16, 24, 36]
-    hidden_size = [16, 32, 64]
-    num_layers = [1, 2]
+    # Training parameters (ordered from highest to lowest GPU memory usage)
+    past_horizon = [36, 24, 16, 8, 4]
+    hidden_size = [64, 32, 16]
+    num_layers = [2, 1]
     n_axis = [1, 2]
     max_epochs = 200
-    batch_size = 256
+    batch_size = 128
     pred_horizon = 2
 
     dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/training_val'
