@@ -17,7 +17,7 @@ def load_h5(filename):
     return data
 
 # launch the training
-def train_per_fold(data, combinations, device, max_epochs=200, batch_size=64, pred_horizon=2):
+def train_per_fold(data, combinations, device, max_epochs=200, batch_size=64, pred_horizon=2, weight_decay=1e-4):
 
     n_folds = len(data)
     pin_memory = (device == "cuda" or (isinstance(device, torch.device) and device.type == "cuda"))
@@ -74,10 +74,10 @@ def train_per_fold(data, combinations, device, max_epochs=200, batch_size=64, pr
             
             # Create model, optimizer and scheduler
             model = IndependentSlopeLSTM(n_axis=n_axis, hidden_size=hidden_size, num_layers=num_layers).to(device)
-            optim = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
+            optim = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
             min_delta = 1e-4
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optim, mode="min", factor=0.5, patience=8, threshold=min_delta, threshold_mode="rel", min_lr=1e-7
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optim, T_max=max_epochs, eta_min=1e-6
             )
 
             # Train: Error metric is mean square error (MSE)
@@ -143,8 +143,8 @@ def train_per_fold(data, combinations, device, max_epochs=200, batch_size=64, pr
 
                 val_loss = total_val_loss / max(n_val_samples, 1)
 
-                # Update learning rate if on plateau
-                scheduler.step(val_loss)
+                # Update learning rate with cosine annealing
+                scheduler.step()
 
                 # Check early stopping
                 if val_loss < best_val_loss * (1 - min_delta):
@@ -218,12 +218,12 @@ if __name__ == "__main__":
     print(f"Using device: {device}\n")
 
     # Training parameters
-    past_horizon = [4, 8, 16]
+    past_horizon = [4, 8, 16, 24, 36]
     hidden_size = [16, 32, 64]
     num_layers = [1, 2]
     n_axis = [1, 2]
     max_epochs = 200
-    batch_size = 64
+    batch_size = 256
     pred_horizon = 2
 
     dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/training_val'
@@ -293,7 +293,7 @@ if __name__ == "__main__":
         "hidden_size": hidden_size,
         "num_layers": num_layers,
         "n_axis": n_axis,
-        "learning_rate": [1e-3],
+        "learning_rate": [3e-4],
     }
 
     # Generate all the configurations
