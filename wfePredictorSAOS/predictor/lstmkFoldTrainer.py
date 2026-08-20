@@ -102,7 +102,7 @@ def train_per_fold(data, combinations, device, max_epochs=200, batch_size=64, pr
                     y_truth = y_truth.to(device)
 
                     # Reset gradients
-                    optim.zero_grad()
+                    optim.zero_grad(set_to_none=True)
 
                     # Predict / forward
                     y_pred = model(x)
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     num_layers = [2, 1]
     n_axis = [1, 2]
     max_epochs = 200
-    batch_size = 16
+    batch_size = 8
     pred_horizon = 2
 
     dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/training_val'

@@ -89,7 +89,7 @@ def train_final_model(
             x = x.to(device)
             y_truth = y_truth.to(device)
 
-            optim.zero_grad()
+            optim.zero_grad(set_to_none=True)
             y_pred = model(x)
             loss = criterion(y_pred, y_truth)
             loss.backward()
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     learning_rate = 3e-4
     weight_decay = 1e-4
     max_epochs = 200
-    batch_size = 16
+    batch_size = 8
     pred_horizon = 2
     model_save_path = "best_model_IndepLSTM.pt"
 
