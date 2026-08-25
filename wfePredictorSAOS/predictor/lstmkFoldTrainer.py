@@ -218,7 +218,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}\n")
 
     # Training parameters (ordered from highest to lowest GPU memory usage)
-    past_horizon = [36, 24, 16, 8, 4]
+    past_horizon = [16, 8, 4, 24, 36]
     hidden_size = [64, 32, 16]
     num_layers = [2, 1]
     n_axis = [1, 2]
