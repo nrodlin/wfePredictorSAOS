@@ -227,22 +227,25 @@ if __name__ == "__main__":
     print(f"Using device: {device}\n")
 
     # ── Paths ─────────────────────────────────────────────────────────────────
-    user_home = os.path.expanduser('~')
-    results_path = os.path.join(user_home, "simulations", "results", "predictorSAOS", "training", "test")
+    dalia_path = '/net/dalia/scratch1/nlinares/results/results/predictor/training/test'
+    local_path = '/home/nlinares/simulations/results/predictorSAOS/training/test'
+    results_path = dalia_path if os.path.exists(dalia_path) else local_path
     model_path = "best_model_IndepLSTM.pt"
     
     # ── Hyperparameters ───────────────────────────────────────────────────────
     past_horizon   = 8
     future_horizon = 2
     stride         = 1
-    hidden_size    = 32
+    hidden_size    = 16
+    num_layers     = 1
+    n_axis         = 1
 
     # ── Verify the Model ──────────────────────────────────────────────────────
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file {model_path} not found. Ensure you run lstmTrainer.py first.")
         
     # ── Load Model ────────────────────────────────────────────────────────────
-    model = IndependentSlopeLSTM(hidden_size=hidden_size, num_layers=1).to(device)
+    model = IndependentSlopeLSTM(n_axis=n_axis, hidden_size=hidden_size, num_layers=num_layers).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
@@ -276,43 +279,49 @@ if __name__ == "__main__":
     nSlopes = dataset_list_test[0].shape[-1]
     print(f"nSlopes = {nSlopes}\n")
     
-    # ── Normalization ─────────────────────────────────────────────────────────
-    # Keeping per-file normalization rule
-    dataset_list_test, _ = apply_normalization_per_file(dataset_list_test, "test")
-    
-    # Assemble test dataloader
-    test_ds = ConcatDataset([
-        SlopesDataset(ds, past_horizon, future_horizon, stride)
-        for ds in dataset_list_test
-    ])
-    
-    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=2)
+    # Assemble test dataset and dataloader
+    test_ds = SlopesDataset(dataset_list_test, past_horizon, pred_horizon=future_horizon)
+    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, pin_memory=(device == 'cuda'))
 
     # ── System Testing Metrics ────────────────────────────────────────────────
     print("Initiating full test evaluation...")
-    total_loss, n = 0.0, 0
+    total_loss, total_pers_loss, n = 0.0, 0.0, 0
     with torch.no_grad():
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             pred = model(x)
             loss = F.mse_loss(pred, y)
-            total_loss += loss.item() * x.size(0)
-            n += x.size(0)
+            
+            # Persistence baseline
+            pers = x[:, -1, :]
+            pers_loss = F.mse_loss(pers, y)
+            
+            batch_len = x.size(0)
+            total_loss += loss.item() * batch_len
+            total_pers_loss += pers_loss.item() * batch_len
+            n += batch_len
             
     final_test_loss = total_loss / max(n, 1)
+    final_pers_loss = total_pers_loss / max(n, 1)
+    imprv_pct = ((final_pers_loss - final_test_loss) / max(final_pers_loss, 1e-12)) * 100.0
     
-    print(f"\n[GLOBAL] Test Set (Cases 6-8) Total Accumulated MSE = {final_test_loss:.6f}")
+    print(f"\n[GLOBAL] Test Set (Cases 6-8) Total Samples = {n:,}")
+    print(f"  Model MSE       : {final_test_loss:.6e} (RMSE: {np.sqrt(final_test_loss):.5f})")
+    print(f"  Persistence MSE : {final_pers_loss:.6e} (RMSE: {np.sqrt(final_pers_loss):.5f})")
+    print(f"  Improvement     : {imprv_pct:+.2f}% over Persistence\n")
     
     # Export metrics json
     with open("test_results.json", "w") as f:
         json.dump({
             "num_test_samples": len(test_ds),
-            "mse_loss": final_test_loss
+            "mse_loss": final_test_loss,
+            "persistence_mse": final_pers_loss,
+            "improvement_pct": imprv_pct,
         }, f, indent=4)
         
     print("[EXPORT] test_results.json saved")
     
-    # ── Test Set Plotting Extracted from Old Trainer ──────────────────────────
+    # ── Test Set Plotting ─────────────────────────────────────────────────────
     
     x_seq, y_true, y_pred = collect_predictions(model, test_ds, device, n_samples=5)
 
