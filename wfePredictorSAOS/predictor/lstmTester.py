@@ -94,8 +94,8 @@ def plot_slope_predictions(x_seq, y_true, y_pred, n_slopes_shown=8,
 
     fig.suptitle(f"Prediction per slope — test sample #{sample_idx}", fontsize=12)
     plt.tight_layout()
-    fname = f"test_predictions_per_slope_sample{sample_idx}.png"
-    plt.savefig(fname, dpi=150)
+    fname = f"test_predictions_per_slope_sample{sample_idx}.pdf"
+    plt.savefig(fname, bbox_inches="tight")
     print(f"[PLOT] {fname} saved")
 
 def plot_full_vector_comparison(y_true, y_pred, nSlopes, n_samples=3):
@@ -121,7 +121,7 @@ def plot_full_vector_comparison(y_true, y_pred, nSlopes, n_samples=3):
         ax.plot(slope_axis, pred,  color="red",      linewidth=0.8, alpha=0.9, label="Prediction")
         ax.fill_between(slope_axis, 0, error,        color="orange",alpha=0.4, label="Error")
         ax.axvline(half, color="gray", linestyle="--", linewidth=1, label="X | Y")
-        ax.set_ylabel("Amplitude (norm.)")
+        ax.set_ylabel("Amplitude")
         ax.set_title(f"Test sample #{i}  —  MSE={np.mean(error**2):.6f}", fontsize=10)
         ax.legend(fontsize=8, loc="upper right")
         ax.grid(True, alpha=0.2)
@@ -129,8 +129,8 @@ def plot_full_vector_comparison(y_true, y_pred, nSlopes, n_samples=3):
     axes[-1].set_xlabel("Slope Index (left: X, right: Y)")
     fig.suptitle("Full Slope Vector: Truth vs Prediction", fontsize=13)
     plt.tight_layout()
-    plt.savefig("test_full_vector_comparison.png", dpi=150)
-    print("[PLOT] test_full_vector_comparison.png saved")
+    plt.savefig("test_full_vector_comparison.pdf", bbox_inches="tight")
+    print("[PLOT] test_full_vector_comparison.pdf saved")
 
 def plot_error_distribution(y_true, y_pred):
     """
@@ -160,13 +160,16 @@ def plot_error_distribution(y_true, y_pred):
     axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("test_error_distribution.png", dpi=150)
-    print("[PLOT] test_error_distribution.png saved")
+    plt.savefig("test_error_distribution.pdf", bbox_inches="tight")
+    print("[PLOT] test_error_distribution.pdf saved")
 
 def plot_temporal_sequence(model, test_data_raw, device, past_horizon,
                            future_horizon, n_frames=80, slope_indices=None):
     """
-    Plots a continuous loop trace comparing the physical timeseries tracking dynamics.
+    Plots a continuous loop trace comparing the physical timeseries tracking dynamics:
+      - Truth at t+future_horizon (green)
+      - LSTM Prediction for t+future_horizon (red dashed)
+      - Persistence baseline at current frame t (dark slate gray dotted/dashed)
     """
     if slope_indices is None:
         nS = test_data_raw.shape[1]
@@ -175,7 +178,7 @@ def plot_temporal_sequence(model, test_data_raw, device, past_horizon,
     model.eval()
     data = test_data_raw  
 
-    preds, truths = [], []
+    preds, truths, persistences = [], [], []
     with torch.no_grad():
         for t in range(n_frames):
             start = t
@@ -185,39 +188,49 @@ def plot_temporal_sequence(model, test_data_raw, device, past_horizon,
             x    = data[start:end].unsqueeze(0).to(device)   
             pred = model(x).squeeze(0).cpu()
             truth = data[end + future_horizon - 1]
+            pers = data[end - 1] # Current slope (persistence baseline, 2 steps behind truth)
+
             preds.append(pred)
             truths.append(truth)
+            persistences.append(pers)
 
     preds  = torch.stack(preds).numpy()   
     truths = torch.stack(truths).numpy()  
+    persistences = torch.stack(persistences).numpy()
     t_axis = np.arange(len(preds))
 
     ncols = 3
     nrows = int(np.ceil(len(slope_indices) / ncols))
     fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(ncols * 5, nrows * 3),
+                             figsize=(ncols * 5, nrows * 3.2),
                              sharey=False)
     axes = axes.flatten()
 
     for plot_i, s in enumerate(slope_indices):
         ax = axes[plot_i]
-        ax.plot(t_axis, truths[:, s], color="green", linewidth=1.2, label="Truth", alpha=0.9)
-        ax.plot(t_axis, preds[:, s],  color="red", linewidth=1.0, label="Prediction", alpha=0.9, linestyle="--")
-        corr = np.corrcoef(truths[:, s], preds[:, s])[0, 1]
-        ax.set_title(f"Slope {s}  |  r={corr:.3f}", fontsize=9)
-        ax.set_xlabel("Frame")
-        ax.set_ylabel("Amplitude (norm.)")
+        ax.plot(t_axis, truths[:, s], color="#1b7837", linewidth=1.8, label=f"Truth (t+{future_horizon})", alpha=0.95)
+        ax.plot(t_axis, persistences[:, s], color="#333333", linewidth=1.4, linestyle=":", label="Persistence (t)", alpha=0.9)
+        ax.plot(t_axis, preds[:, s],  color="#d73027", linewidth=1.5, label=f"LSTM Pred (t+{future_horizon})", alpha=0.95, linestyle="--")
+        
+        corr_pred = np.corrcoef(truths[:, s], preds[:, s])[0, 1]
+        mse_pred = np.mean((truths[:, s] - preds[:, s])**2)
+        mse_pers = np.mean((truths[:, s] - persistences[:, s])**2)
+        imprv = (mse_pers - mse_pred) / max(mse_pers, 1e-12) * 100.0
+
+        ax.set_title(f"Slope {s} | r={corr_pred:.3f} | Imprv: {imprv:+.1f}%", fontsize=9)
+        ax.set_xlabel("Target Frame Index")
+        ax.set_ylabel("Slope Value")
         if plot_i == 0:
-            ax.legend(fontsize=8)
+            ax.legend(fontsize=8, loc="best")
         ax.grid(True, alpha=0.3)
 
     for j in range(plot_i + 1, len(axes)):
         axes[j].set_visible(False)
 
-    fig.suptitle("Temporal Evolution Dynamics: Truth vs Prediction (Test file 0)", fontsize=12)
+    fig.suptitle(f"Temporal Evolution Dynamics (Truth vs LSTM Prediction vs Persistence, step ahead = {future_horizon})", fontsize=12)
     plt.tight_layout()
-    plt.savefig("test_temporal_sequence.png", dpi=150)
-    print("[PLOT] test_temporal_sequence.png saved")
+    plt.savefig("test_temporal_sequence.pdf", bbox_inches="tight")
+    print("[PLOT] test_temporal_sequence.pdf saved")
 
 # ==============================================================================
 # MAIN ENTRY POINT
@@ -281,7 +294,7 @@ if __name__ == "__main__":
     
     # Assemble test dataset and dataloader
     test_ds = SlopesDataset(dataset_list_test, past_horizon, pred_horizon=future_horizon)
-    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, pin_memory=(device == 'cuda'))
+    test_loader = DataLoader(test_ds, batch_size=16, shuffle=False, pin_memory=(device == 'cuda'))
 
     # ── System Testing Metrics ────────────────────────────────────────────────
     print("Initiating full test evaluation...")
