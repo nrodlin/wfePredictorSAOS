@@ -181,7 +181,7 @@ if __name__ == "__main__":
     learning_rate = 3e-4
     weight_decay = 1e-4
     max_epochs = 400
-    batch_size = 128
+    batch_size = 64
     pred_horizon = 2
     model_save_path = "best_model_IndepLSTM.pt"
 
