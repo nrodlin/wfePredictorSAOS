@@ -2,7 +2,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 #SBATCH --time=36:00:00
-#SBATCH --job-name=lstmTrain
+#SBATCH --job-name=saosDalia
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
 #SBATCH --gres=gpu:1

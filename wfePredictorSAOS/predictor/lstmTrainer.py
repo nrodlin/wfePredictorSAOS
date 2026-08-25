@@ -174,14 +174,14 @@ if __name__ == "__main__":
     print(f"Using device: {device}\n")
 
     # Final hyperparameters (set according to k-fold selection)
-    past_horizon = 16
-    hidden_size = 64
-    num_layers = 2
+    past_horizon = 8
+    hidden_size = 16
+    num_layers = 1
     n_axis = 1
     learning_rate = 3e-4
     weight_decay = 1e-4
-    max_epochs = 200
-    batch_size = 8
+    max_epochs = 400
+    batch_size = 128
     pred_horizon = 2
     model_save_path = "best_model_IndepLSTM.pt"
 
