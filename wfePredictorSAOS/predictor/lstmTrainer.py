@@ -65,7 +65,7 @@ def train_final_model(
     test_data,
     test_data_by_atm,
     device,
-    past_horizon=8,
+    past_horizon=24,
     hidden_size=16,
     num_layers=1,
     n_axis=1,
@@ -270,7 +270,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}\n")
 
     # Final hyperparameters selected by user
-    past_horizon = 8
+    past_horizon = 24
     hidden_size = 16
     num_layers = 1
     n_axis = 1
