@@ -139,7 +139,7 @@ OOPAO/M4_model/influence_functions/*.fits
 OOPAO/M4_model/*.fits
 
 # json files 
-*.json
+# *.json
 *.filepart
 
 # pkl files
