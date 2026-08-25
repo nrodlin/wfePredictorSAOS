@@ -233,7 +233,7 @@ if __name__ == "__main__":
     model_path = "best_model_IndepLSTM.pt"
     
     # ── Hyperparameters ───────────────────────────────────────────────────────
-    past_horizon   = 8
+    past_horizon   = 24
     future_horizon = 2
     stride         = 1
     hidden_size    = 16
