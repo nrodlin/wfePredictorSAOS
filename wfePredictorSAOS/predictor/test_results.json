@@ -1,0 +1,51 @@
+{
+    "model_config": {
+        "past_horizon": 24,
+        "hidden_size": 16,
+        "num_layers": 1,
+        "n_axis": 1,
+        "learning_rate": 0.0003,
+        "weight_decay": 0.0001,
+        "pred_horizon": 2,
+        "batch_size": 64
+    },
+    "training_summary": {
+        "best_epoch": 95,
+        "best_train_mse": 0.029573734135199817,
+        "best_val_mse": 0.0024589098841907124
+    },
+    "test_results_global": {
+        "mse_model": 0.05158768103768428,
+        "rmse_model": 0.2271292166095861,
+        "mse_persistence": 0.05826147521885797,
+        "rmse_persistence": 0.24137413949894873,
+        "improvement_pct": 11.454900783242651,
+        "n_samples": 11700
+    },
+    "test_results_per_atmosphere": {
+        "Atmosphere_6": {
+            "mse_model": 0.13168464785967118,
+            "rmse_model": 0.36288379387852415,
+            "mse_persistence": 0.1492536970743766,
+            "rmse_persistence": 0.3863336602916922,
+            "improvement_pct": 11.77126567655497,
+            "n_samples": 3900
+        },
+        "Atmosphere_7": {
+            "mse_model": 0.012990193297274601,
+            "rmse_model": 0.1139745291601356,
+            "mse_persistence": 0.013476695483311629,
+            "rmse_persistence": 0.11608917039634502,
+            "improvement_pct": 3.6099516134312726,
+            "n_samples": 3900
+        },
+        "Atmosphere_8": {
+            "mse_model": 0.010088202091745841,
+            "rmse_model": 0.1004400422727203,
+            "mse_persistence": 0.012054033117034497,
+            "rmse_persistence": 0.10979086080833185,
+            "improvement_pct": 16.308491989378947,
+            "n_samples": 3900
+        }
+    }
+}
