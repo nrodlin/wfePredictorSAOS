@@ -10,7 +10,17 @@ import numpy as np
 def parse_args():
     parser = argparse.ArgumentParser(description="Unified Analysis for 2kHz AO Predictor Simulations")
     parser.add_argument('--sensor', type=str, default=None, choices=['36', '50', 'all'], help="Filter by sensor (36, 50, or all)")
+    parser.add_argument('--base_dir', type=str, default=None, help="Base directory for results (default: /mnt/nas-mcao/predictor_sims/results or ~/simulations/results)")
     return parser.parse_args()
+
+def get_results_base_dir(custom_base_dir=None):
+    if custom_base_dir:
+        if custom_base_dir.endswith('results'):
+            return custom_base_dir
+        return os.path.join(custom_base_dir, 'results')
+    if os.path.exists('/mnt/nas-mcao'):
+        return '/mnt/nas-mcao/predictor_sims/results'
+    return os.path.expanduser('~/simulations/results')
 
 def analyze_open_loop(base_dir, sensor_filter=None):
     ol_dir = os.path.join(base_dir, 'predictor_ol')
@@ -130,7 +140,7 @@ def analyze_cl_sin_cerrar(base_dir, sensor_filter=None):
 
 def main():
     args = parse_args()
-    base_dir = os.path.expanduser('~/simulations/results')
+    base_dir = get_results_base_dir(args.base_dir)
 
     print("=" * 125)
     print("                      UNIFIED AO PREDICTOR SIMULATION ANALYSIS REPORT (2 kHz)")

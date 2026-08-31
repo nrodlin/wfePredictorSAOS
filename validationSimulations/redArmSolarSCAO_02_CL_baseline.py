@@ -38,8 +38,25 @@ def parse_args():
     parser.add_argument('--no_vibr_only', action='store_true', help="Run only no-vibration cases")
     parser.add_argument('--vibr_only', action='store_true', help="Run only vibration cases")
     parser.add_argument('--generate_atm', action='store_true', help="Generate and overwrite atmosphere phase screens")
+    parser.add_argument('--base_dir', type=str, default=None, help="Base directory for simulations (default: /mnt/nas-mcao/predictor_sims or ~/simulations)")
+    parser.add_argument('--skip_existing', action='store_true', help="Skip simulation if result file already exists")
     parser.add_argument('--test', action='store_true', help="Quick test mode (50 iterations, atm1 draw1 noVibr)")
     return parser.parse_args()
+
+def get_base_dir(custom_base_dir=None):
+    if custom_base_dir:
+        return custom_base_dir
+    if os.path.exists('/mnt/nas-mcao'):
+        nas_pred_dir = '/mnt/nas-mcao/predictor_sims'
+        os.makedirs(nas_pred_dir, exist_ok=True)
+        return nas_pred_dir
+    return os.path.join(os.path.expanduser('~'), 'simulations')
+
+def get_asset_dirs(base_dir):
+    user_home_sims = os.path.join(os.path.expanduser('~'), 'simulations')
+    mirror_models_dir = os.path.join(base_dir, 'MirrorModels') if os.path.exists(os.path.join(base_dir, 'MirrorModels')) else os.path.join(user_home_sims, 'MirrorModels')
+    vibrations_dir = os.path.join(base_dir, 'VibrationsSource') if os.path.exists(os.path.join(base_dir, 'VibrationsSource')) else os.path.join(user_home_sims, 'VibrationsSource')
+    return mirror_models_dir, vibrations_dir
 
 def main():
     args = parse_args()
@@ -54,19 +71,21 @@ def main():
     test_logger = LoggingHelper(logging.INFO)
     logger = test_logger.logger
 
-    user_home = os.path.expanduser('~')
-    ps_dir = os.path.join(user_home, 'simulations', 'phase_screens')
-    res_dir = os.path.join(user_home, 'simulations', 'results', 'cl_baseline')
+    base_dir = get_base_dir(args.base_dir)
+    mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
+
+    ps_dir = os.path.join(base_dir, 'phase_screens')
+    res_dir = os.path.join(base_dir, 'results', 'cl_baseline')
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
     # Modal basis & Interaction Matrix paths
     if args.sensor == 36:
-        load_filename_modalBasis = os.path.join(user_home, 'simulations', 'modal_basis', 'predictor_36x36_modalBasis.h5')
-        load_filename_IM = os.path.join(user_home, 'simulations', 'interaction_matrix', 'predictor_36x36_IM.h5')
+        load_filename_modalBasis = os.path.join(base_dir, 'modal_basis', 'predictor_36x36_modalBasis.h5')
+        load_filename_IM = os.path.join(base_dir, 'interaction_matrix', 'predictor_36x36_IM.h5')
     else:
-        load_filename_modalBasis = os.path.join(user_home, 'simulations', 'modal_basis', 'predictor_50x50_modalBasis.h5')
-        load_filename_IM = os.path.join(user_home, 'simulations', 'interaction_matrix', 'predictor_50x50_IM.h5')
+        load_filename_modalBasis = os.path.join(base_dir, 'modal_basis', 'predictor_50x50_modalBasis.h5')
+        load_filename_IM = os.path.join(base_dir, 'interaction_matrix', 'predictor_50x50_IM.h5')
 
     diameter = 4.149
     obs_diameter = 1.3
@@ -135,7 +154,7 @@ def main():
                 if use_vibrations:
                     vibr_label = "Vibr"
                     vib_idx = atm_idx if atm_idx <= 5 else 1
-                    vibration_file = os.path.join(user_home, 'simulations', 'VibrationsSource', f'EST_vibration_{vib_idx}.h5')
+                    vibration_file = os.path.join(vibrations_dir, f'EST_vibration_{vib_idx}.h5')
                     vibrations = Vibration(est_tel, vibration_file, logger)
                 else:
                     vibr_label = "noVibr"
@@ -143,6 +162,11 @@ def main():
 
                 res_file_name = f"res_cl_baseline_{args.delay}delay_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
+
+                if args.skip_existing and os.path.exists(res_file_path):
+                    logger.info(f"Skipping {res_file_name} - already exists at {res_file_path}")
+                    continue
+
                 if os.path.exists(res_file_path):
                     os.remove(res_file_path)
                 savepoint = Savepoint(
@@ -160,7 +184,7 @@ def main():
                 if args.sensor == 36:
                     sun = ExtendedSource(optBand='R', coordinates=[0, 0], nSubDirs=3, fov=9.269, subDir_margin=4.0, patch_padding=5.0, logger=logger)
                     ngs = Source(magnitude=5, optBand='R4', coordinates=[0, 0], logger=logger)
-                    dm_params = {'dynamicModel': os.path.join(user_home, 'simulations', 'MirrorModels', 'asm_discrete_model.h5'), 'validActThreshpercentage': 0.7533}
+                    dm_params = {'dynamicModel': os.path.join(mirror_models_dir, 'asm_discrete_model.h5'), 'validActThreshpercentage': 0.7533}
                     dm = DeformableMirror(telescope=est_tel, nActs=37, altitude=0, typeDM='radial', logger=logger, **dm_params)
                     wfs_plate_scale = 0.403
                     wfs_fov = 9.269
@@ -169,7 +193,7 @@ def main():
                 else:
                     sun = ExtendedSource(optBand='V', coordinates=[0, 0], nSubDirs=3, fov=9.975, subDir_margin=4.0, patch_padding=5.0, logger=logger)
                     ngs = Source(magnitude=5, optBand='V0', coordinates=[0, 0], logger=logger)
-                    dm_params = {'dynamicModel': os.path.join(user_home, 'simulations', 'MirrorModels', 'm7_discrete_model.h5'), 'validActThreshpercentage': 0.5}
+                    dm_params = {'dynamicModel': os.path.join(mirror_models_dir, 'm7_discrete_model.h5'), 'validActThreshpercentage': 0.5}
                     dm = DeformableMirror(telescope=est_tel, nActs=51, altitude=0, typeDM='cartesian', logger=logger, **dm_params)
                     wfs_plate_scale = 0.475
                     wfs_fov = 9.975

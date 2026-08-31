@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=72:00:00
+#SBATCH --job-name=saosPredictor_durum
+#SBATCH --output=%j.out
+#SBATCH --error=%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+#SBATCH --qos=long
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+
+# Run the master campaign in unbuffered mode
+# 1. Pre-generates all 15 phase screens, modal bases, and IMs on the NAS
+# 2. Runs OL, CL Baseline, CL POL Linear, CL POL LSTM, and CL Sin Cerrar (2500 iterations @ 2kHz)
+# 3. Formats and prints the final Strehl / RMSE summary report
+python -u run_campaign.py --skip_existing

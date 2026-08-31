@@ -33,8 +33,25 @@ def parse_args():
     parser.add_argument('--no_vibr_only', action='store_true', help="Run only no-vibration cases")
     parser.add_argument('--vibr_only', action='store_true', help="Run only vibration cases")
     parser.add_argument('--generate_atm', action='store_true', help="Generate and overwrite atmosphere phase screens")
+    parser.add_argument('--base_dir', type=str, default=None, help="Base directory for simulations (default: /mnt/nas-mcao/predictor_sims or ~/simulations)")
+    parser.add_argument('--skip_existing', action='store_true', help="Skip simulation if result file already exists")
     parser.add_argument('--test', action='store_true', help="Quick test mode (50 iterations, atm1 draw1 noVibr)")
     return parser.parse_args()
+
+def get_base_dir(custom_base_dir=None):
+    if custom_base_dir:
+        return custom_base_dir
+    if os.path.exists('/mnt/nas-mcao'):
+        nas_pred_dir = '/mnt/nas-mcao/predictor_sims'
+        os.makedirs(nas_pred_dir, exist_ok=True)
+        return nas_pred_dir
+    return os.path.join(os.path.expanduser('~'), 'simulations')
+
+def get_asset_dirs(base_dir):
+    user_home_sims = os.path.join(os.path.expanduser('~'), 'simulations')
+    mirror_models_dir = os.path.join(base_dir, 'MirrorModels') if os.path.exists(os.path.join(base_dir, 'MirrorModels')) else os.path.join(user_home_sims, 'MirrorModels')
+    vibrations_dir = os.path.join(base_dir, 'VibrationsSource') if os.path.exists(os.path.join(base_dir, 'VibrationsSource')) else os.path.join(user_home_sims, 'VibrationsSource')
+    return mirror_models_dir, vibrations_dir
 
 def main():
     args = parse_args()
@@ -49,9 +66,11 @@ def main():
     test_logger = LoggingHelper(logging.INFO)
     logger = test_logger.logger
 
-    user_home = os.path.expanduser('~')
-    ps_dir = os.path.join(user_home, 'simulations', 'phase_screens')
-    res_dir = os.path.join(user_home, 'simulations', 'results', 'predictor_ol')
+    base_dir = get_base_dir(args.base_dir)
+    mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
+
+    ps_dir = os.path.join(base_dir, 'phase_screens')
+    res_dir = os.path.join(base_dir, 'results', 'predictor_ol')
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
@@ -123,7 +142,7 @@ def main():
                 if use_vibrations:
                     vibr_label = "Vibr"
                     vib_idx = atm_idx if atm_idx <= 5 else 1
-                    vibration_file = os.path.join(user_home, 'simulations', 'VibrationsSource', f'EST_vibration_{vib_idx}.h5')
+                    vibration_file = os.path.join(vibrations_dir, f'EST_vibration_{vib_idx}.h5')
                     vibrations = Vibration(est_tel, vibration_file, logger)
                 else:
                     vibr_label = "noVibr"
@@ -131,6 +150,11 @@ def main():
 
                 res_file_name = f"res_ol_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
+                
+                if args.skip_existing and os.path.exists(res_file_path):
+                    logger.info(f"Skipping {res_file_name} - already exists at {res_file_path}")
+                    continue
+
                 if os.path.exists(res_file_path):
                     os.remove(res_file_path)
                 savepoint = Savepoint(file_path=res_file_path, slopes=1, error=1, logger=logger)
