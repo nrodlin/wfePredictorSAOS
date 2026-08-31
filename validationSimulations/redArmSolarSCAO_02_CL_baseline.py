@@ -69,10 +69,10 @@ def get_config_info(sensor, mode_offset, use_vibrations, atm_name, draw_name, is
     if is_test:
         return 1, 1, vibr_label
     sensor_offset = 0 if sensor == 36 else 150
-    vibr_offset = 15 if use_vibrations else 0
+    vibr_offset = 1 if use_vibrations else 0
     atm_idx = int(atm_name.replace('atm', ''))
     draw_idx = int(draw_name.replace('draw', ''))
-    cfg_idx = sensor_offset + mode_offset + vibr_offset + (atm_idx - 1) * 3 + (draw_idx - 1) + 1
+    cfg_idx = sensor_offset + mode_offset + (atm_idx - 1) * 6 + (draw_idx - 1) * 2 + vibr_offset + 1
     return cfg_idx, 300, vibr_label
 
 def get_asset_dirs(base_dir):
