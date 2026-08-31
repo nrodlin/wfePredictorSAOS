@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import sys
@@ -6,6 +5,7 @@ import time
 import json
 import argparse
 import logging
+import h5py
 import numpy as np
 import torch
 from joblib import Parallel, delayed
@@ -401,6 +401,13 @@ def main():
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)
                     savepoint.save(scao_light_path_list, i)
+
+                    if (i + 1) % 250 == 0 or (i + 1) == args.n_iterations or i == 0:
+                        slopes_rms = float(np.std(res_slopes))
+                        psf_frame = scao_light_path_list[1].sci.cam.frame
+                        psf_peak = float(np.max(psf_frame)) if psf_frame is not None else 0.0
+                        stability = "STABLE" if slopes_rms < 1.0 else "WARNING (Diverging)"
+                        logger.info(f"  [Iter {i+1:4d}/{args.n_iterations}] | Res Slopes RMS: {slopes_rms:.4f} px | PSF Peak: {psf_peak:8.2e} | Status: [{stability}]")
 
                 res_arr = np.array(slopes_res_list, dtype=np.float32)
                 pol_arr = np.array(slopes_pol_list, dtype=np.float32)

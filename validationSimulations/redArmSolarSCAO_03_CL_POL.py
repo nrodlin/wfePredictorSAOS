@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 import os
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import sys
 import time
 import argparse
 import logging
+import h5py
 import numpy as np
 import torch
 from joblib import Parallel, delayed
@@ -362,9 +362,6 @@ def main():
 
                 logger.info(f"Beginning CL POL ({args.predictor.upper()}) loop ({args.n_iterations} iterations, {vibr_label})")
                 for i in range(args.n_iterations):
-                    if i % 200 == 0:
-                        logger.info(f"Iteration {i+1}/{args.n_iterations}")
-
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
@@ -404,7 +401,30 @@ def main():
                     savepoint.save(dms, i)
                     savepoint.save(scao_light_path_list, i)
 
-                logger.info(f"Simulation ended for {atm_name} {draw_name} ({vibr_label})")
+                    if (i + 1) % 250 == 0 or (i + 1) == args.n_iterations or i == 0:
+                        slopes_rms = float(np.std(res_slopes))
+                        psf_frame = scao_light_path_list[1].sci.cam.frame
+                        psf_peak = float(np.max(psf_frame)) if psf_frame is not None else 0.0
+                        stability = "STABLE" if slopes_rms < 1.0 else "WARNING (Diverging)"
+                        logger.info(f"  [Iter {i+1:4d}/{args.n_iterations}] | Res Slopes RMS: {slopes_rms:.4f} px | PSF Peak: {psf_peak:8.2e} | Status: [{stability}]")
+
+                # Summary of science metrics and stability from saved HDF5
+                try:
+                    with h5py.File(res_file_path, 'r') as h5f:
+                        s56_arr = h5f['LightPath_1/sci_frame_longExp/strehl'][()] if 'LightPath_1/sci_frame_longExp/strehl' in h5f else []
+                        s5_arr = h5f['LightPath_2/sci_frame_longExp/strehl'][()] if 'LightPath_2/sci_frame_longExp/strehl' in h5f else []
+                        c_arr = h5f['LightPath_0/sci_frame_longExp/contrast'][()] if 'LightPath_0/sci_frame_longExp/contrast' in h5f else []
+                        final_s56 = float(np.mean(s56_arr[1:])) if len(s56_arr) > 1 else (float(s56_arr[0]) if len(s56_arr) else 0.0)
+                        final_s5 = float(np.mean(s5_arr[1:])) if len(s5_arr) > 1 else (float(s5_arr[0]) if len(s5_arr) else 0.0)
+                        final_c = float(np.mean(c_arr[1:])) if len(c_arr) > 1 else (float(c_arr[0]) if len(c_arr) else 0.0)
+                        
+                        logger.info(f"--- [Performance Summary: {atm_name} {draw_name} {vibr_label}] ---")
+                        logger.info(f"  PSF Strehl @ 56 Hz      : {final_s56:.5f} (Peak Ratio)")
+                        logger.info(f"  PSF Strehl @ 5 Hz       : {final_s5:.5f}")
+                        logger.info(f"  Solar Granular Contrast : {final_c:.4f}")
+                        logger.info(f"  Loop Stability Status   : [{'STABLE' if final_s56 > 0.01 else 'UNSTABLE / LOW'}]")
+                except Exception as e:
+                    logger.debug(f"Could not read summary from HDF5: {e}")
 
             t_case_end = time.time()
             logger.info(f"=== Completed CL POL for {atm_name} {draw_name} in {t_case_end - t_case_start:.2f} s ===")
