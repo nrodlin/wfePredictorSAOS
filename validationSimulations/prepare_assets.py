@@ -17,6 +17,10 @@ import logging
 import numpy as np
 import torch
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 from SAOS.LoggingHelper import LoggingHelper
 from SAOS.Source import Source
 from SAOS.ExtendedSource import ExtendedSource
@@ -28,7 +32,10 @@ from SAOS.LightPath import LightPath
 from SAOS.InteractionMatrixHandler import InteractionMatrixHandler
 from SAOS.ScienceCam import ScienceCam
 
-from atmosphereCases import atm_cases
+try:
+    from atmosphereCases import atm_cases
+except ImportError:
+    from validationSimulations.atmosphereCases import atm_cases
 
 def get_base_dir(custom_base_dir=None):
     if custom_base_dir:

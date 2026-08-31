@@ -21,8 +21,15 @@ import argparse
 import logging
 import subprocess
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 from SAOS.LoggingHelper import LoggingHelper
-from prepare_assets import prepare_all_assets, get_base_dir
+try:
+    from prepare_assets import prepare_all_assets, get_base_dir
+except ImportError:
+    from validationSimulations.prepare_assets import prepare_all_assets, get_base_dir
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Master Campaign Runner for 2kHz AO Predictor Simulations")

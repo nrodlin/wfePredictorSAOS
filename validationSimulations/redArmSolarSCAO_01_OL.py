@@ -10,18 +10,28 @@ import numpy as np
 import torch
 from joblib import Parallel, delayed
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 from SAOS.LoggingHelper import LoggingHelper
+from SAOS.Source import Source
 from SAOS.ExtendedSource import ExtendedSource
 from SAOS.Telescope import Telescope
 from SAOS.Atmosphere import Atmosphere
+from SAOS.Vibration import Vibration
 from SAOS.CorrelatingShackHartmann import CorrelatingShackHartmann
 from SAOS.LightPath import LightPath
+from SAOS.ScienceCam import ScienceCam
 from SAOS.Savepoint import Savepoint
-from SAOS.Vibration import Vibration
 
 from wfePredictorSAOS.predictor.onlinePredictor import OnlineSlopePredictor
 from wfePredictorSAOS.predictor.onlineLinearPredictor import OnlineLinearSlopePredictor
-from atmosphereCases import atm_cases
+
+try:
+    from atmosphereCases import atm_cases
+except ImportError:
+    from validationSimulations.atmosphereCases import atm_cases
 
 def parse_args():
     parser = argparse.ArgumentParser(description="OL Simulation with Linear & LSTM Predictors (2kHz)")
