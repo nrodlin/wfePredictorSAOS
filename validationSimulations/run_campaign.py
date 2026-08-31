@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument('--base_dir', type=str, default=None, help="Base directory (default: /mnt/nas-mcao/predictor_sims or ~/simulations)")
     parser.add_argument('--sensors', nargs='+', type=int, default=[36, 50], help="Sensor sizes to run (default: 36 50)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of simulation iterations (default: 2500 for 1.25s)")
+    parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default: 2000.0)")
     parser.add_argument('--atm', type=str, default=None, help="Run specific atmosphere (e.g. atm1). Default: all")
     parser.add_argument('--draw', type=str, default=None, help="Run specific draw (e.g. draw1). Default: all")
     parser.add_argument('--skip_existing', action='store_true', help="Skip simulations if result file already exists")
@@ -66,10 +67,11 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     logger.info("=" * 100)
-    logger.info(" STARTING UNIFIED AO PREDICTOR SIMULATION CAMPAIGN (2 kHz)")
+    logger.info(" STARTING UNIFIED AO PREDICTOR SIMULATION CAMPAIGN")
     logger.info(f" Host: {os.uname().nodename}")
     logger.info(f" Base Directory: {base_dir}")
     logger.info(f" Sensors: {args.sensors}")
+    logger.info(f" Sampling Frequency: {args.sampling_freq} Hz")
     logger.info(f" Iterations per simulation: {50 if args.test else args.n_iterations}")
     logger.info(f" Skip existing: {args.skip_existing}")
     logger.info(f" Test mode: {args.test}")
@@ -95,7 +97,8 @@ def main():
 
     common_flags = [
         '--base_dir', base_dir,
-        '--n_iterations', str(args.n_iterations)
+        '--n_iterations', str(args.n_iterations),
+        '--sampling_freq', str(args.sampling_freq)
     ]
     if args.atm:
         common_flags.extend(['--atm', args.atm])
