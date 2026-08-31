@@ -56,6 +56,11 @@ def parse_args():
 def get_base_dir(custom_base_dir=None):
     if custom_base_dir:
         return custom_base_dir
+    user = os.environ.get('USER', 'nlinares')
+    if os.path.exists('/net/durum/scratch'):
+        scratch_dir = f'/net/durum/scratch/{user}/simulations'
+        os.makedirs(scratch_dir, exist_ok=True)
+        return scratch_dir
     if os.path.exists('/mnt/nas-mcao'):
         nas_pred_dir = '/mnt/nas-mcao/predictor_sims'
         os.makedirs(nas_pred_dir, exist_ok=True)
@@ -64,8 +69,27 @@ def get_base_dir(custom_base_dir=None):
 
 def get_asset_dirs(base_dir):
     user_home_sims = os.path.join(os.path.expanduser('~'), 'simulations')
-    mirror_models_dir = os.path.join(base_dir, 'MirrorModels') if os.path.exists(os.path.join(base_dir, 'MirrorModels')) else os.path.join(user_home_sims, 'MirrorModels')
-    vibrations_dir = os.path.join(base_dir, 'VibrationsSource') if os.path.exists(os.path.join(base_dir, 'VibrationsSource')) else os.path.join(user_home_sims, 'VibrationsSource')
+    user = os.environ.get('USER', 'nlinares')
+    scratch_sims = f'/net/durum/scratch/{user}/simulations'
+    
+    if os.path.exists(os.path.join(base_dir, 'MirrorModels')):
+        mirror_models_dir = os.path.join(base_dir, 'MirrorModels')
+    elif os.path.exists(os.path.join(scratch_sims, 'MirrorModels')):
+        mirror_models_dir = os.path.join(scratch_sims, 'MirrorModels')
+    elif os.path.exists('/mnt/nas-mcao/MirrorModels'):
+        mirror_models_dir = '/mnt/nas-mcao/MirrorModels'
+    else:
+        mirror_models_dir = os.path.join(user_home_sims, 'MirrorModels')
+
+    if os.path.exists(os.path.join(base_dir, 'VibrationsSource')):
+        vibrations_dir = os.path.join(base_dir, 'VibrationsSource')
+    elif os.path.exists(os.path.join(scratch_sims, 'VibrationsSource')):
+        vibrations_dir = os.path.join(scratch_sims, 'VibrationsSource')
+    elif os.path.exists('/mnt/nas-mcao/VibrationsSource'):
+        vibrations_dir = '/mnt/nas-mcao/VibrationsSource'
+    else:
+        vibrations_dir = os.path.join(user_home_sims, 'VibrationsSource')
+        
     return mirror_models_dir, vibrations_dir
 
 def main():

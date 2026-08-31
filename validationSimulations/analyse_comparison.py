@@ -18,6 +18,9 @@ def get_results_base_dir(custom_base_dir=None):
         if custom_base_dir.endswith('results'):
             return custom_base_dir
         return os.path.join(custom_base_dir, 'results')
+    user = os.environ.get('USER', 'nlinares')
+    if os.path.exists('/net/durum/scratch'):
+        return f'/net/durum/scratch/{user}/simulations/results'
     if os.path.exists('/mnt/nas-mcao'):
         return '/mnt/nas-mcao/predictor_sims/results'
     return os.path.expanduser('~/simulations/results')
