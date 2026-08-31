@@ -64,6 +64,17 @@ def get_base_dir(custom_base_dir=None):
         return nas_pred_dir
     return os.path.join(os.path.expanduser('~'), 'simulations')
 
+def get_config_info(sensor, mode_offset, use_vibrations, atm_name, draw_name, is_test=False):
+    vibr_label = "Vibr" if use_vibrations else "noVibr"
+    if is_test:
+        return 1, 1, vibr_label
+    sensor_offset = 0 if sensor == 36 else 150
+    vibr_offset = 15 if use_vibrations else 0
+    atm_idx = int(atm_name.replace('atm', ''))
+    draw_idx = int(draw_name.replace('draw', ''))
+    cfg_idx = sensor_offset + mode_offset + vibr_offset + (atm_idx - 1) * 3 + (draw_idx - 1) + 1
+    return cfg_idx, 300, vibr_label
+
 def get_asset_dirs(base_dir):
     user_home_sims = os.path.join(os.path.expanduser('~'), 'simulations')
     user = os.environ.get('USER', 'nlinares')
@@ -149,8 +160,6 @@ def main():
 
         for draw_name, kwargs in draws_to_run.items():
             t_case_start = time.time()
-            logger.info(f"=== Starting CL Baseline [{args.sensor}x{args.sensor}, delay={args.delay}] for {atm_name} {draw_name} ===")
-
             atm_file_name = f"ps_dualARM_EST_case{atm_idx}_{draw_name}.h5"
             atm_file_path = os.path.join(ps_dir, atm_file_name)
 
@@ -177,25 +186,28 @@ def main():
                 torch.cuda.empty_cache()
 
             for use_vibrations in vibr_options:
+                cfg_idx, total_cfg, vibr_label = get_config_info(args.sensor, 30, use_vibrations, atm_name, draw_name, args.test)
+                logger.info("=" * 95)
+                logger.info(f">>> [Config {cfg_idx}/{total_cfg}] ({cfg_idx/total_cfg*100:.1f}%) | Sensor: {args.sensor}x{args.sensor} | Mode: CL Baseline (delay={args.delay}) | Atm: {atm_name} | Draw: {draw_name} | Vibr: {vibr_label}")
+                logger.info("=" * 95)
+
                 success = atm.load(atm_file_path)
                 if not success:
                     logger.error(f"Failed to load {atm_file_path}. Skipping.")
                     continue
 
                 if use_vibrations:
-                    vibr_label = "Vibr"
                     vib_idx = atm_idx if atm_idx <= 5 else 1
                     vibration_file = os.path.join(vibrations_dir, f'EST_vibration_{vib_idx}.h5')
                     vibrations = Vibration(est_tel, vibration_file, logger)
                 else:
-                    vibr_label = "noVibr"
                     vibrations = None
 
                 res_file_name = f"res_cl_baseline_{args.delay}delay_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
 
                 if args.skip_existing and os.path.exists(res_file_path):
-                    logger.info(f"Skipping {res_file_name} - already exists at {res_file_path}")
+                    logger.info(f"Skipping {res_file_name} [Config {cfg_idx}/{total_cfg}] - already exists at {res_file_path}")
                     continue
 
                 if os.path.exists(res_file_path):
