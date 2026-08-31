@@ -346,7 +346,7 @@ def main():
                 else:
                     predictor = OnlineLinearSlopePredictor(
                         n_slopes=n_slopes,
-                        past_horizon=24,
+                        past_horizon=8,
                         steps_ahead=2
                     )
 

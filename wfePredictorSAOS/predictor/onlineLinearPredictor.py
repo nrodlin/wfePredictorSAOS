@@ -4,7 +4,7 @@ import numpy as np
 class OnlineLinearSlopePredictor:
     def __init__(self,
                  n_slopes,
-                 past_horizon=24,
+                 past_horizon=8,
                  steps_ahead=2,
                  device=None,
                  mean=None,

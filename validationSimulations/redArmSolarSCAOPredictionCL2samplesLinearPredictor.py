@@ -208,7 +208,7 @@ for atm_name, draws in atm_cases.items():
                                 logger=test_logger.logger,
                                 **controller_kwargs)
 
-        past_horizon = 4
+        past_horizon = 8
         n_slopes = scao_light_path_list[0].slopes_1D.shape[0]
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
