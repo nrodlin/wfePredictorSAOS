@@ -171,12 +171,12 @@ def main():
                     os.remove(res_file_path)
                 savepoint = Savepoint(
                     file_path=res_file_path,
-                    atm=1,
                     dm=1,
                     slopes=1,
+                    error=1,
                     sci=1,
-                    sci_frame=1,
-                    only_metrics=1,
+                    sci_frame={'long': 1},
+                    only_metrics=False,
                     logger=logger
                 )
 
@@ -217,7 +217,17 @@ def main():
                     logger=logger
                 )
 
-                # Science Cameras: Standard Long Exposure (56 Hz) and Ultra Long Exposure (5 Hz)
+                # Science Cameras: Solar (56 Hz), Standard Long Exposure Point PSF (56 Hz) and Ultra Long Exposure (5 Hz)
+                scicam_solar = ScienceCam(
+                    fieldOfView=sci_fov,
+                    plate_scale=sci_plate_scale,
+                    samplingTime=est_tel.samplingTime,
+                    telescope=est_tel,
+                    integrationTime=1.0 / 56.0,
+                    decimation=18,
+                    noiseFlag=False,
+                    logger=logger
+                )
                 scicam_56 = ScienceCam(
                     fieldOfView=sci_fov,
                     plate_scale=sci_plate_scale,
@@ -238,9 +248,9 @@ def main():
                 )
 
                 scao_light_path_list = []
-                # WFS branch (LP0)
+                # WFS & Solar Science branch (LP0)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=None, delay=args.delay)
+                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=scicam_solar, delay=args.delay)
 
                 # Science branch 56 Hz (LP1)
                 scao_light_path_list.append(LightPath(logger))

@@ -98,8 +98,19 @@ def analyze_cl_strehl(base_dir, folder_name, sensor_filter=None):
                     strehl_5hz = float(np.mean(eval_arr))
                     std_5hz = float(np.std(eval_arr))
 
-                if strehl_56hz is None and strehl_5hz is None:
-                    continue
+                # Solar Science Camera (LightPath_0)
+                contrast_solar = None
+                mfgs_solar = None
+                p_solar_contrast = 'LightPath_0/sci_frame_longExp/contrast'
+                p_solar_mfgs = 'LightPath_0/sci_frame_longExp/MFGS'
+                if p_solar_contrast in f and len(f[p_solar_contrast][()]) >= 1:
+                    arr = f[p_solar_contrast][()]
+                    eval_arr = arr[1:] if len(arr) > 2 else arr
+                    contrast_solar = float(np.mean(eval_arr))
+                if p_solar_mfgs in f and len(f[p_solar_mfgs][()]) >= 1:
+                    arr = f[p_solar_mfgs][()]
+                    eval_arr = arr[1:] if len(arr) > 2 else arr
+                    mfgs_solar = float(np.mean(eval_arr))
 
                 results.append({
                     'case': folder_name,
@@ -110,7 +121,9 @@ def analyze_cl_strehl(base_dir, folder_name, sensor_filter=None):
                     'strehl_56hz': strehl_56hz,
                     'std_56hz': std_56hz,
                     'strehl_5hz': strehl_5hz,
-                    'std_5hz': std_5hz
+                    'std_5hz': std_5hz,
+                    'contrast_solar': contrast_solar,
+                    'mfgs_solar': mfgs_solar
                 })
         except Exception as e:
             print(f"Error reading {fp}: {e}")
@@ -142,18 +155,18 @@ def main():
     args = parse_args()
     base_dir = get_results_base_dir(args.base_dir)
 
-    print("=" * 125)
+    print("=" * 140)
     print("                      UNIFIED AO PREDICTOR SIMULATION ANALYSIS REPORT (2 kHz)")
-    print("=" * 125)
+    print("=" * 140)
 
     # 1. Open Loop Analysis
     ol_res = analyze_open_loop(base_dir, args.sensor)
     if ol_res:
-        print("\n" + "#" * 125)
+        print("\n" + "#" * 140)
         print(" [1] OPEN LOOP (OL) PREDICTION ERRORS (Slope RMSE in px & % Improvement vs ZOH delay=2)")
-        print("#" * 125)
+        print("#" * 140)
         print(f"{'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'ZOH RMSE':<12} | {'Linear RMSE':<14} {'(Impr %)':<10} | {'LSTM RMSE':<14} {'(Impr %)':<10}")
-        print("-" * 125)
+        print("-" * 140)
         for r in ol_res:
             print(f"{r.get('sensor', ''):<8} | {r.get('atm', ''):<6} {r.get('draw', ''):<6} {r.get('vibr', ''):<8} | "
                   f"{r.get('rmse_zoh', 0):<12.5f} | "
@@ -163,47 +176,50 @@ def main():
     # 2. Closed Loop Sin Cerrar Analysis
     sc_res = analyze_cl_sin_cerrar(base_dir, args.sensor)
     if sc_res:
-        print("\n" + "#" * 125)
+        print("\n" + "#" * 140)
         print(" [2] CLOSED LOOP 'SIN CERRAR' (POL Slope RMSE in px & % Improvement vs ZOH)")
-        print("#" * 125)
+        print("#" * 140)
         print(f"{'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'POL ZOH RMSE':<14} | {'POL Lin RMSE':<14} {'(Impr %)':<10} | {'POL LSTM RMSE':<14} {'(Impr %)':<10}")
-        print("-" * 125)
+        print("-" * 140)
         for r in sc_res:
             print(f"{r.get('sensor', ''):<8} | {r.get('atm', ''):<6} {r.get('draw', ''):<6} {r.get('vibr', ''):<8} | "
                   f"{r.get('rmse_pol_zoh', 0):<14.5f} | "
                   f"{r.get('rmse_pol_linear', 0):<14.5f} {r.get('impr_linear_pct', 0):>+8.2f}% | "
                   f"{r.get('rmse_pol_lstm', 0):<14.5f} {r.get('impr_lstm_pct', 0):>+8.2f}%")
 
-    # 3. Closed Loop Strehl Comparison (56 Hz and 5 Hz)
+    # 3. Closed Loop Science Strehl & Solar Contrast Comparison
     cl_baseline = analyze_cl_strehl(base_dir, 'cl_baseline', args.sensor)
     cl_pol_lstm = analyze_cl_strehl(base_dir, 'cl_pol_lstm', args.sensor)
     cl_pol_lin = analyze_cl_strehl(base_dir, 'cl_pol_linear', args.sensor)
 
     all_cl = cl_baseline + cl_pol_lstm + cl_pol_lin
     if all_cl:
-        print("\n" + "#" * 125)
-        print(" [3] CLOSED LOOP SCIENCE STREHL RATIO COMPARISON (56 Hz & 5 Hz Long Exposures)")
-        print("#" * 125)
-        print(f"{'Configuration':<20} | {'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'Strehl @ 56 Hz (T=17.9ms)':<28} | {'Strehl @ 5 Hz (T=200ms)':<28}")
-        print("-" * 125)
+        print("\n" + "#" * 140)
+        print(" [3] CLOSED LOOP SCIENCE QUALITY (Point-Source Strehl & Solar Granulation Contrast)")
+        print("#" * 140)
+        print(f"{'Configuration':<18} | {'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'Strehl @ 56 Hz':<24} | {'Strehl @ 5 Hz':<24} | {'Solar Contrast':<16}")
+        print("-" * 140)
         for r in sorted(all_cl, key=lambda x: (x['sensor'], x['vibr'], x['atm'], x['draw'], x['case'])):
             s56_str = f"{r['strehl_56hz']:.5f} ± {r['std_56hz']:.5f}" if r['strehl_56hz'] is not None else "N/A"
             s5_str = f"{r['strehl_5hz']:.5f} ± {r['std_5hz']:.5f}" if r['strehl_5hz'] is not None else "N/A"
-            print(f"{r['case']:<20} | {r['sensor']:<8} | {r['atm']:<6} {r['draw']:<6} {r['vibr']:<8} | {s56_str:<28} | {s5_str:<28}")
+            cntr_str = f"{r['contrast_solar']:.4f}" if r.get('contrast_solar') is not None else "N/A"
+            print(f"{r['case']:<18} | {r['sensor']:<8} | {r['atm']:<6} {r['draw']:<6} {r['vibr']:<8} | {s56_str:<24} | {s5_str:<24} | {cntr_str:<16}")
 
         print("\n" + "-" * 100)
-        print(" GLOBAL AVERAGE STREHL SUMMARY BY CONFIGURATION")
+        print(" GLOBAL AVERAGE SCIENCE PERFORMANCE SUMMARY BY CONFIGURATION")
         print("-" * 100)
         for folder in ['cl_baseline', 'cl_pol_linear', 'cl_pol_lstm']:
             for sens in (['36x36', '50x50'] if not args.sensor or args.sensor == 'all' else [f"{args.sensor}x{args.sensor}"]):
                 subset_56 = [r['strehl_56hz'] for r in all_cl if r['case'] == folder and r['sensor'] == sens and r['strehl_56hz'] is not None]
                 subset_5 = [r['strehl_5hz'] for r in all_cl if r['case'] == folder and r['sensor'] == sens and r['strehl_5hz'] is not None]
+                subset_c = [r['contrast_solar'] for r in all_cl if r['case'] == folder and r['sensor'] == sens and r.get('contrast_solar') is not None]
                 s56_summary = f"{np.mean(subset_56):.5f} ± {np.std(subset_56):.5f}" if subset_56 else "N/A"
                 s5_summary = f"{np.mean(subset_5):.5f} ± {np.std(subset_5):.5f}" if subset_5 else "N/A"
-                if subset_56 or subset_5:
-                    print(f" -> {folder:<18} [{sens}]: Strehl@56Hz = {s56_summary:<20} | Strehl@5Hz = {s5_summary}")
+                cntr_summary = f"{np.mean(subset_c):.4f}" if subset_c else "N/A"
+                if subset_56 or subset_5 or subset_c:
+                    print(f" -> {folder:<18} [{sens}]: Strehl@56Hz = {s56_summary:<22} | Strehl@5Hz = {s5_summary:<22} | Contrast = {cntr_summary}")
 
-    print("=" * 125)
+    print("=" * 140)
 
 if __name__ == "__main__":
     main()

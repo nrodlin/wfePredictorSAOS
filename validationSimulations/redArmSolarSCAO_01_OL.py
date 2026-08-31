@@ -157,11 +157,23 @@ def main():
 
                 if os.path.exists(res_file_path):
                     os.remove(res_file_path)
-                savepoint = Savepoint(file_path=res_file_path, slopes=1, error=1, logger=logger)
+                savepoint = Savepoint(
+                    file_path=res_file_path,
+                    dm=0,
+                    slopes=1,
+                    error=1,
+                    sci=1,
+                    sci_frame={'long': 1},
+                    only_metrics=False,
+                    logger=logger
+                )
 
                 sun_band = 'V' if args.sensor == 50 else 'R'
+                ngs_band = 'V0' if args.sensor == 50 else 'R4'
                 wfs_fov = 9.975 if args.sensor == 50 else 9.269
                 wfs_plate_scale = 0.475 if args.sensor == 50 else 0.403
+                sci_fov = 9.975 if args.sensor == 50 else 9.269
+                sci_plate_scale = 0.0128 if args.sensor == 50 else 0.0167
 
                 sun = ExtendedSource(
                     optBand=sun_band,
@@ -172,6 +184,7 @@ def main():
                     patch_padding=5.0,
                     logger=logger
                 )
+                ngs = Source(magnitude=5, optBand=ngs_band, coordinates=[0, 0], logger=logger)
 
                 shwfs = CorrelatingShackHartmann(
                     telescope=est_tel,
@@ -187,8 +200,29 @@ def main():
                     logger=logger
                 )
 
-                # Build single Light Path for Open Loop
-                scao_light_path_list = [LightPath(logger)]
+                scicam_solar = ScienceCam(
+                    fieldOfView=sci_fov,
+                    plate_scale=sci_plate_scale,
+                    samplingTime=est_tel.samplingTime,
+                    telescope=est_tel,
+                    integrationTime=1.0 / 56.0,
+                    decimation=18,
+                    noiseFlag=False,
+                    logger=logger
+                )
+
+                scicam_56 = ScienceCam(
+                    fieldOfView=sci_fov,
+                    plate_scale=sci_plate_scale,
+                    samplingTime=est_tel.samplingTime,
+                    telescope=est_tel,
+                    integrationTime=1.0 / 56.0,
+                    noiseFlag=False,
+                    logger=logger
+                )
+
+                # Build Light Paths for Open Loop (Solar WFS+Sci, Point PSF Sci)
+                scao_light_path_list = [LightPath(logger), LightPath(logger)]
                 scao_light_path_list[0].initialize_path(
                     src=sun,
                     atm=atm,
@@ -197,9 +231,22 @@ def main():
                     wfs=shwfs,
                     ncpa=None,
                     vibration=vibrations,
-                    sci=None,
+                    sci=scicam_solar,
                     delay=0
                 )
+                scao_light_path_list[1].initialize_path(
+                    src=ngs,
+                    atm=atm,
+                    tel=est_tel,
+                    dm=None,
+                    wfs=None,
+                    ncpa=None,
+                    vibration=vibrations,
+                    sci=scicam_56,
+                    delay=0
+                )
+
+                lightPathTasks = [delayed(lp.propagate)(True) for lp in scao_light_path_list]
 
                 n_slopes = scao_light_path_list[0].slopes_1D.shape[0]
                 logger.info(f"Sensor {args.sensor}x{args.sensor}: Detected {n_slopes} slopes")
@@ -229,7 +276,7 @@ def main():
                         logger.info(f"Iteration {i+1}/{args.n_iterations}")
 
                     atm.update()
-                    scao_light_path_list[0].propagate(True)
+                    Parallel(n_jobs=2, prefer="threads")(lightPathTasks)
                     savepoint.save(scao_light_path_list, i)
 
                     current_slopes = scao_light_path_list[0].slopes_1D.copy()
