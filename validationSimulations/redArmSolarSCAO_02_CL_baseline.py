@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument('--delay', type=int, default=2, help="Loop delay samples (default 2)")
     parser.add_argument('--n_iterations', type=int, default=2000, help="Number of iterations (default 2000 for 1s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
+    parser.add_argument('--gain', type=float, default=0.25, help="Loop gain (default 0.25)")
+    parser.add_argument('--decay', type=float, default=0.999, help="Leaky decay factor (default 0.999)")
     parser.add_argument('--atm', type=str, default=None, help="Atmosphere case to run (e.g. atm1). Default: all")
     parser.add_argument('--draw', type=str, default=None, help="Draw to run (e.g. draw1). Default: all")
     parser.add_argument('--no_vibr_only', action='store_true', help="Run only no-vibration cases")
@@ -211,8 +213,8 @@ def main():
                 controller_kwargs = {
                     'rcond': 0.025,
                     'beta': 1e-4,
-                    'gain': [0.25],
-                    'decay': [0.999],
+                    'gain': [args.gain],
+                    'decay': [args.decay],
                     'ki': [0.0]
                 }
 
