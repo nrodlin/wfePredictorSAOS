@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import numpy as np
@@ -10,9 +11,11 @@ from wfePredictorSAOS.predictor.independentLSTMModel import IndependentSlopeLSTM
 class OnlineSlopePredictor:
     def __init__(self,
                  n_slopes,
-                 model_path='best_model_IndepLSTM.pt',
-                 past_horizon=8,
-                 hidden_size=32,
+                 model_path=None,
+                 past_horizon=24,
+                 hidden_size=16,
+                 n_axis=1,
+                 num_layers=1,
                  device=None,
                  mean=None,
                  std=None):
@@ -21,7 +24,10 @@ class OnlineSlopePredictor:
         self.past_horizon = past_horizon
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.model = IndependentSlopeLSTM(hidden_size=hidden_size, num_layers=1).to(self.device)
+        if model_path is None:
+            model_path = os.path.join(os.path.dirname(__file__), 'best_model_IndepLSTM.pt')
+
+        self.model = IndependentSlopeLSTM(n_axis=n_axis, hidden_size=hidden_size, num_layers=num_layers).to(self.device)
         state_dict = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(state_dict)
         self.model.eval()
