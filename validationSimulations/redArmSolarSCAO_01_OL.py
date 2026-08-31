@@ -26,7 +26,7 @@ from atmosphereCases import atm_cases
 def parse_args():
     parser = argparse.ArgumentParser(description="OL Simulation with Linear & LSTM Predictors (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
-    parser.add_argument('--n_iterations', type=int, default=2000, help="Number of iterations (default 2000 for 1s at 2kHz)")
+    parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
     parser.add_argument('--atm', type=str, default=None, help="Atmosphere case to run (e.g. atm1). Default: all")
     parser.add_argument('--draw', type=str, default=None, help="Draw to run (e.g. draw1). Default: all")
@@ -40,7 +40,8 @@ def main():
     args = parse_args()
     
     if args.test:
-        args.n_iterations = 50
+        if args.n_iterations == 2500:
+            args.n_iterations = 50
         args.atm = 'atm1'
         args.draw = 'draw1'
         args.no_vibr_only = True
@@ -54,12 +55,12 @@ def main():
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
-    # Telescope setup
+    # Telescope setup (matching pdrClosure 200px resolution)
     diameter = 4.149
     obs_diameter = 1.3
     sampling_time = 1.0 / args.sampling_freq
     n_subaperture = args.sensor
-    resolution = n_subaperture * 4
+    resolution = 200
     tel_fov = 60.0
 
     est_tel = Telescope(
@@ -88,7 +89,7 @@ def main():
             t_case_start = time.time()
             logger.info(f"=== Starting OL Validation [{args.sensor}x{args.sensor}] for {atm_name} {draw_name} (r0 LOS: {kwargs['los_r0']:.2f} m) ===")
 
-            atm_file_name = f"ps_val_{args.sensor}x{args.sensor}_{atm_name}_{draw_name}.h5"
+            atm_file_name = f"ps_dualARM_EST_case{atm_idx}_{draw_name}.h5"
             atm_file_path = os.path.join(ps_dir, atm_file_name)
 
             atm = Atmosphere(
@@ -104,6 +105,8 @@ def main():
             )
 
             if args.generate_atm or not os.path.exists(atm_file_path):
+                if os.path.exists(atm_file_path):
+                    os.remove(atm_file_path)
                 atm.initializeAtmosphere()
                 atm.save(atm_file_path)
                 logger.info(f"Generated new atmosphere -> {atm_file_path}")
@@ -128,14 +131,19 @@ def main():
 
                 res_file_name = f"res_ol_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
+                if os.path.exists(res_file_path):
+                    os.remove(res_file_path)
                 savepoint = Savepoint(file_path=res_file_path, slopes=1, error=1, logger=logger)
 
                 sun_band = 'V' if args.sensor == 50 else 'R'
+                wfs_fov = 9.975 if args.sensor == 50 else 9.269
+                wfs_plate_scale = 0.475 if args.sensor == 50 else 0.403
+
                 sun = ExtendedSource(
                     optBand=sun_band,
                     coordinates=[0, 0],
                     nSubDirs=3,
-                    fov=9.269,
+                    fov=wfs_fov,
                     subDir_margin=4.0,
                     patch_padding=5.0,
                     logger=logger
@@ -146,8 +154,8 @@ def main():
                     src=sun,
                     lightRatio=0.9,
                     nSubap=n_subaperture,
-                    plate_scale=0.403,
-                    fieldOfView=9.269,
+                    plate_scale=wfs_plate_scale,
+                    fieldOfView=wfs_fov,
                     guardPx=2,
                     fft_fieldOfView_oversampling=0.5,
                     use_brightest=9,

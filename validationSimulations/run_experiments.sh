@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 SENSORS=("36" "50")
-N_ITERATIONS=2000
+N_ITERATIONS=2500
 
 echo "=============================================================================="
 echo " Starting AO Predictor Simulation Campaign (2 kHz)"

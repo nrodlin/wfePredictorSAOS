@@ -31,7 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Closed-Loop POL (Pseudo-Open-Loop) Simulation with Predictor (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
     parser.add_argument('--predictor', type=str, default='lstm', choices=['lstm', 'linear'], help="Predictor type (lstm or linear)")
-    parser.add_argument('--n_iterations', type=int, default=2000, help="Number of iterations (default 2000 for 1s at 2kHz)")
+    parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
     parser.add_argument('--gain', type=float, default=0.25, help="Loop gain (default 0.25)")
     parser.add_argument('--decay', type=float, default=0.999, help="Leaky decay factor (default 0.999)")
@@ -47,7 +47,8 @@ def main():
     args = parse_args()
 
     if args.test:
-        args.n_iterations = 50
+        if args.n_iterations == 2500:
+            args.n_iterations = 50
         args.atm = 'atm1'
         args.draw = 'draw1'
         args.no_vibr_only = True
@@ -62,8 +63,8 @@ def main():
     os.makedirs(res_dir, exist_ok=True)
 
     if args.sensor == 36:
-        load_filename_modalBasis = os.path.join(user_home, 'simulations', 'modal_basis', 'predictor_modalBasis.h5')
-        load_filename_IM = os.path.join(user_home, 'simulations', 'interaction_matrix', 'predictor_IM.h5')
+        load_filename_modalBasis = os.path.join(user_home, 'simulations', 'modal_basis', 'predictor_36x36_modalBasis.h5')
+        load_filename_IM = os.path.join(user_home, 'simulations', 'interaction_matrix', 'predictor_36x36_IM.h5')
     else:
         load_filename_modalBasis = os.path.join(user_home, 'simulations', 'modal_basis', 'predictor_50x50_modalBasis.h5')
         load_filename_IM = os.path.join(user_home, 'simulations', 'interaction_matrix', 'predictor_50x50_IM.h5')
@@ -72,9 +73,8 @@ def main():
     obs_diameter = 1.3
     sampling_time = 1.0 / args.sampling_freq
     n_subaperture = args.sensor
-    resolution = n_subaperture * 4
+    resolution = 200
     tel_fov = 60.0
-    scienceFs = 56.0
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     est_tel = Telescope(
@@ -103,7 +103,7 @@ def main():
             t_case_start = time.time()
             logger.info(f"=== Starting CL POL [{args.predictor.upper()}, {args.sensor}x{args.sensor}] for {atm_name} {draw_name} ===")
 
-            atm_file_name = f"ps_val_{args.sensor}x{args.sensor}_{atm_name}_{draw_name}.h5"
+            atm_file_name = f"ps_dualARM_EST_case{atm_idx}_{draw_name}.h5"
             atm_file_path = os.path.join(ps_dir, atm_file_name)
 
             atm = Atmosphere(
@@ -119,6 +119,8 @@ def main():
             )
 
             if args.generate_atm or not os.path.exists(atm_file_path):
+                if os.path.exists(atm_file_path):
+                    os.remove(atm_file_path)
                 atm.initializeAtmosphere()
                 atm.save(atm_file_path)
                 logger.info(f"Generated new atmosphere -> {atm_file_path}")
@@ -143,6 +145,8 @@ def main():
 
                 res_file_name = f"res_cl_pol_{args.predictor}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
+                if os.path.exists(res_file_path):
+                    os.remove(res_file_path)
                 savepoint = Savepoint(
                     file_path=res_file_path,
                     atm=1,
@@ -154,35 +158,36 @@ def main():
                     logger=logger
                 )
 
-                ngs = Source(magnitude=5, optBand='R4', coordinates=[0, 0], logger=logger)
-                sun = ExtendedSource(
-                    optBand='V' if args.sensor == 50 else 'R',
-                    coordinates=[0, 0],
-                    nSubDirs=3,
-                    fov=9.269,
-                    subDir_margin=4.0,
-                    patch_padding=5.0,
-                    logger=logger
-                )
+                # Sources & DM geometry configured according to pdrClosure
+                if args.sensor == 36:
+                    sun = ExtendedSource(optBand='R', coordinates=[0, 0], nSubDirs=3, fov=9.269, subDir_margin=4.0, patch_padding=5.0, logger=logger)
+                    ngs = Source(magnitude=5, optBand='R4', coordinates=[0, 0], logger=logger)
+                    dm_params = {'dynamicModel': os.path.join(user_home, 'simulations', 'MirrorModels', 'asm_discrete_model.h5'), 'validActThreshpercentage': 0.7533}
+                    dm = DeformableMirror(telescope=est_tel, nActs=37, altitude=0, typeDM='radial', logger=logger, **dm_params)
+                    wfs_plate_scale = 0.403
+                    wfs_fov = 9.269
+                    sci_fov = 9.269
+                    sci_plate_scale = 0.0167
+                else:
+                    sun = ExtendedSource(optBand='V', coordinates=[0, 0], nSubDirs=3, fov=9.975, subDir_margin=4.0, patch_padding=5.0, logger=logger)
+                    ngs = Source(magnitude=5, optBand='V0', coordinates=[0, 0], logger=logger)
+                    dm_params = {'dynamicModel': os.path.join(user_home, 'simulations', 'MirrorModels', 'm7_discrete_model.h5'), 'validActThreshpercentage': 0.5}
+                    dm = DeformableMirror(telescope=est_tel, nActs=51, altitude=0, typeDM='cartesian', logger=logger, **dm_params)
+                    wfs_plate_scale = 0.475
+                    wfs_fov = 9.975
+                    sci_fov = 9.975
+                    sci_plate_scale = 0.0128
 
-                asm_params = {'dynamicModel': os.path.join(user_home, 'simulations', 'MirrorModels', 'asm_discrete_model.h5'), 'validActThreshpercentage': 0.5}
-                asm = DeformableMirror(
-                    telescope=est_tel,
-                    nActs=n_subaperture + 1,
-                    altitude=0,
-                    typeDM='cartesian',
-                    logger=logger,
-                    **asm_params
-                )
-                dms = [asm]
+                dms = [dm]
 
+                # WFS
                 shwfs = CorrelatingShackHartmann(
                     telescope=est_tel,
                     src=sun,
                     lightRatio=0.9,
                     nSubap=n_subaperture,
-                    plate_scale=0.403,
-                    fieldOfView=9.269,
+                    plate_scale=wfs_plate_scale,
+                    fieldOfView=wfs_fov,
                     guardPx=2,
                     fft_fieldOfView_oversampling=0.5,
                     use_brightest=9,
@@ -190,22 +195,38 @@ def main():
                     logger=logger
                 )
 
-                scicam = ScienceCam(
-                    fieldOfView=9.269,
-                    plate_scale=0.0167,
+                # Science Cameras: Standard Long Exposure (56 Hz) and Ultra Long Exposure (5 Hz)
+                scicam_56 = ScienceCam(
+                    fieldOfView=sci_fov,
+                    plate_scale=sci_plate_scale,
                     samplingTime=est_tel.samplingTime,
                     telescope=est_tel,
-                    integrationTime=1.0 / scienceFs,
+                    integrationTime=1.0 / 56.0,
+                    noiseFlag=False,
+                    logger=logger
+                )
+                scicam_5 = ScienceCam(
+                    fieldOfView=sci_fov,
+                    plate_scale=sci_plate_scale,
+                    samplingTime=est_tel.samplingTime,
+                    telescope=est_tel,
+                    integrationTime=1.0 / 5.0,
                     noiseFlag=False,
                     logger=logger
                 )
 
                 scao_light_path_list = []
+                # WFS branch (LP0)
                 scao_light_path_list.append(LightPath(logger))
                 scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=None, delay=2)
 
+                # Science branch 56 Hz (LP1)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam, delay=2)
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_56, delay=2)
+
+                # Science branch 5 Hz (LP2)
+                scao_light_path_list.append(LightPath(logger))
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_5, delay=2)
 
                 lightPathTasks = [delayed(lp.propagate)(True) for lp in scao_light_path_list]
 
@@ -250,8 +271,9 @@ def main():
 
                 # Interaction matrix tensor for POL reconstruction: s_pol = s_res + IM @ cmd_delayed
                 im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
+                offset = controller.discarded_modes[0]
                 reconstructor = controller.reconstructor[0].to(device)
-                modal_basis = controller.modal_basis[0].to(device)
+                modal_basis = controller.modal_basis[0][:, offset : offset + n_modes].to(device)
 
                 modal_cmd = torch.zeros((n_modes, 1), dtype=torch.float64, device=device)
                 # History buffer for modal commands (delay=2)
@@ -285,13 +307,13 @@ def main():
                         # Leaky integrator update
                         modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                         zonal_cmd = modal_basis @ modal_cmd
-                        asm.updateDMShape(zonal_cmd)
+                        dms[0].updateDMShape(zonal_cmd)
                     else:
                         # Fallback standard closed loop until predictor buffer is full
                         modal_error = (-1.0) * (reconstructor @ res_slopes_tensor)
                         modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                         zonal_cmd = modal_basis @ modal_cmd
-                        asm.updateDMShape(zonal_cmd)
+                        dms[0].updateDMShape(zonal_cmd)
 
                     # Update command history
                     cmd_history.pop(0)
