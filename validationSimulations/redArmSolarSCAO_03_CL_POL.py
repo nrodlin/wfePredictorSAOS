@@ -365,24 +365,26 @@ def main():
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
-                    # Residual slopes measured at t-2
-                    res_slopes = scao_light_path_list[0].slopes_1D.copy()
+                    # Residual slopes measured with loop delay (delay=2)
+                    res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 
                     # Delayed modal command applied 2 samples ago
                     cmd_delayed_2 = cmd_history[-2]
 
-                    # Pseudo-Open-Loop slopes reconstruction: s_pol = s_res + IM @ cmd(t-2)
-                    pol_slopes_tensor = res_slopes_tensor + im_tensor @ cmd_delayed_2
+                    # Pseudo-Open-Loop slopes reconstruction: s_pol = s_res - IM @ cmd(t-2)
+                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed_2
                     pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
 
                     predictor.push(pol_slopes)
 
                     if predictor.ready():
                         predicted_pol = torch.as_tensor(predictor.predict(), dtype=torch.float64, device=device).unsqueeze(1)
-                        # Modal error from predicted open-loop slopes: error = -Reconstructor @ predicted_pol
-                        modal_error = (-1.0) * (reconstructor @ predicted_pol)
-                        # Leaky integrator update
+                        # Modal target from predicted open-loop slopes: c_target = -Reconstructor @ predicted_pol
+                        modal_target = (-1.0) * (reconstructor @ predicted_pol)
+                        # Modal error relative to current DM command: error = modal_target - modal_cmd
+                        modal_error = modal_target - modal_cmd
+                        # Leaky integrator update on residual error
                         modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                         zonal_cmd = modal_basis @ modal_cmd
                         dms[0].updateDMShape(zonal_cmd)

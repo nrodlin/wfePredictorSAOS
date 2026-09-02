@@ -371,14 +371,14 @@ def main():
                     curr_modal_cmd = controller.command_previous[0].to(device)
 
                     # Residual slopes at t-2
-                    res_slopes = scao_light_path_list[0].slopes_1D.copy()
+                    res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 
                     # Delayed modal command applied 2 samples ago
                     cmd_delayed_2 = cmd_history[-2]
 
-                    # Reconstructed POL slopes: s_pol = s_res + IM @ cmd(t-2)
-                    pol_slopes_tensor = res_slopes_tensor + im_tensor @ cmd_delayed_2
+                    # Reconstructed POL slopes: s_pol = s_res - IM @ cmd(t-2)
+                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed_2
                     pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
 
                     # Push POL slopes to predictors
