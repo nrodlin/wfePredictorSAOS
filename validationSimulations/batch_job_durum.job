@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
-#SBATCH --time=72:00:00
+#SBATCH --time=100:00:00
 #SBATCH --job-name=saosPredictor_durum
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
@@ -12,8 +12,15 @@
 
 cd ~/code/wfePredictorSAOS/validationSimulations
 
-# Run the master campaign on durum scratch storage
+# Run the master campaign on durum scratch storage (420 simulations total)
 # 1. Pre-generates all 15 phase screens, modal bases, and IMs on /net/durum/scratch/
-# 2. Runs OL, CL Baseline, CL POL Linear, CL POL LSTM, and CL Sin Cerrar (2500 iterations @ 2kHz)
+# 2. Runs:
+#    - Open Loop (OL)
+#    - CL Baseline (sin predictor)
+#    - CL Direct Linear (a pelo sobre residuo)
+#    - CL Direct LSTM (a pelo sobre residuo)
+#    - CL POL Linear (con reconstrucción POL)
+#    - CL POL LSTM (con reconstrucción POL)
+#    - CL Sin Cerrar (monitorización pasiva)
 # 3. Formats and prints the final Strehl / RMSE summary report
 python -u run_campaign.py --base_dir /net/durum/scratch/$USER/simulations --skip_existing

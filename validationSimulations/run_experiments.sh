@@ -31,21 +31,37 @@ for SENSOR in "${SENSORS[@]}"; do
     t_end=$(date +%s)
     echo ">>> [1/4] Finished OL [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 
-    # 2. Closed Loop Baseline Simulation
+    # 2a. Closed Loop Baseline Simulation (sin predictor)
     echo ""
-    echo ">>> [2/4] Running Closed Loop Baseline (delay=2) [${SENSOR}x${SENSOR}]..."
+    echo ">>> [2a/6] Running Closed Loop Baseline (delay=2) [${SENSOR}x${SENSOR}]..."
     t_start=$(date +%s)
-    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --n_iterations "$N_ITERATIONS"
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor none --n_iterations "$N_ITERATIONS"
     t_end=$(date +%s)
-    echo ">>> [2/4] Finished CL Baseline [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
+    echo ">>> [2a/6] Finished CL Baseline [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
+
+    # 2b. Closed Loop Direct Linear
+    echo ""
+    echo ">>> [2b/6] Running Closed Loop Direct Linear [${SENSOR}x${SENSOR}]..."
+    t_start=$(date +%s)
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor linear --n_iterations "$N_ITERATIONS"
+    t_end=$(date +%s)
+    echo ">>> [2b/6] Finished CL Direct Linear [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
+
+    # 2c. Closed Loop Direct LSTM
+    echo ""
+    echo ">>> [2c/6] Running Closed Loop Direct LSTM [${SENSOR}x${SENSOR}]..."
+    t_start=$(date +%s)
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor lstm --n_iterations "$N_ITERATIONS"
+    t_end=$(date +%s)
+    echo ">>> [2c/6] Finished CL Direct LSTM [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 
     # 3. Closed Loop POL Simulations (Linear & LSTM)
     echo ""
-    echo ">>> [3a/4] Running Closed Loop POL (Linear Predictor) [${SENSOR}x${SENSOR}]..."
+    echo ">>> [3a/6] Running Closed Loop POL (Linear Predictor) [${SENSOR}x${SENSOR}]..."
     t_start=$(date +%s)
     $PYTHON_CMD redArmSolarSCAO_03_CL_POL.py --sensor "$SENSOR" --predictor linear --n_iterations "$N_ITERATIONS"
     t_end=$(date +%s)
-    echo ">>> [3a/4] Finished CL POL Linear [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
+    echo ">>> [3a/6] Finished CL POL Linear [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 
     echo ""
     echo ">>> [3b/4] Running Closed Loop POL (LSTM Predictor) [${SENSOR}x${SENSOR}]..."
