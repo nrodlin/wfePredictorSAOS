@@ -225,7 +225,7 @@ def main():
                     error=1,
                     sci=1,
                     sci_frame={'long': 1},
-                    only_metrics=False,
+                    only_metrics=True,
                     logger=logger
                 )
 

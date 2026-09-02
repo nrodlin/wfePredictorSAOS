@@ -27,14 +27,19 @@ from SAOS.Controller import Controller
 from SAOS.ScienceCam import ScienceCam
 from SAOS.Savepoint import Savepoint
 
+from wfePredictorSAOS.predictor.onlinePredictor import OnlineSlopePredictor
+from wfePredictorSAOS.predictor.onlineLinearPredictor import OnlineLinearSlopePredictor
+
 try:
     from atmosphereCases import atm_cases
 except ImportError:
     from validationSimulations.atmosphereCases import atm_cases
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Closed-Loop Baseline Simulation (2kHz)")
+    parser = argparse.ArgumentParser(description="Closed-Loop Baseline & Direct Prediction Simulation (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
+    parser.add_argument('--predictor', type=str, default='none', choices=['none', 'linear', 'lstm'], help="Predictor type for direct CL (none, linear, or lstm)")
     parser.add_argument('--delay', type=int, default=2, help="Loop delay samples (default 2)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
@@ -117,7 +122,10 @@ def main():
     mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
 
     ps_dir = os.path.join(base_dir, 'phase_screens')
-    res_dir = os.path.join(base_dir, 'results', 'cl_baseline')
+    if args.predictor == 'none':
+        res_dir = os.path.join(base_dir, 'results', 'cl_baseline')
+    else:
+        res_dir = os.path.join(base_dir, 'results', f'cl_direct_{args.predictor}')
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
@@ -203,7 +211,10 @@ def main():
                 else:
                     vibrations = None
 
-                res_file_name = f"res_cl_baseline_{args.delay}delay_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                if args.predictor == 'none':
+                    res_file_name = f"res_cl_baseline_{args.delay}delay_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                else:
+                    res_file_name = f"res_cl_direct_{args.predictor}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
 
                 if args.skip_existing and os.path.exists(res_file_path):
@@ -219,7 +230,7 @@ def main():
                     error=1,
                     sci=1,
                     sci_frame={'long': 1},
-                    only_metrics=False,
+                    only_metrics=True,
                     logger=logger
                 )
 
@@ -328,14 +339,54 @@ def main():
                     **controller_kwargs
                 )
 
-                logger.info(f"Beginning CL Baseline loop ({args.n_iterations} iterations, {vibr_label})")
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                offset = controller.discarded_modes[0]
+                reconstructor = controller.reconstructor[0].to(device)
+                n_modes = reconstructor.shape[0]
+                modal_basis = controller.modal_basis[0][:, offset : offset + n_modes].to(device)
+                modal_cmd = torch.zeros((n_modes, 1), dtype=torch.float64, device=device)
+
+                if args.predictor == 'lstm':
+                    predictor = OnlineSlopePredictor(
+                        n_slopes=shwfs.nSignal,
+                        past_horizon=24,
+                        hidden_size=16,
+                        n_axis=1
+                    )
+                elif args.predictor == 'linear':
+                    predictor = OnlineLinearSlopePredictor(
+                        n_slopes=shwfs.nSignal,
+                        past_horizon=8,
+                        steps_ahead=args.delay
+                    )
+                else:
+                    predictor = None
+
+                mode_name = 'CL Baseline' if args.predictor == 'none' else f'CL Direct ({args.predictor.upper()})'
+                logger.info(f"Beginning {mode_name} loop ({args.n_iterations} iterations, {vibr_label})")
                 for i in range(args.n_iterations):
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
-                    cmd = controller.computeControlAction(scao_light_path_list)
-                    for j in range(len(dms)):
-                        dms[j].updateDMShape(cmd[j])
+                    if args.predictor == 'none':
+                        cmd = controller.computeControlAction(scao_light_path_list)
+                        for j in range(len(dms)):
+                            dms[j].updateDMShape(cmd[j])
+                    else:
+                        res_slopes = scao_light_path_list[0].get_wavefront_error()
+                        predictor.push(res_slopes)
+                        if predictor.ready():
+                            pred_res = torch.as_tensor(predictor.predict(), dtype=torch.float64, device=device).unsqueeze(1)
+                            modal_error = (-1.0) * (reconstructor @ pred_res)
+                            modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                            zonal_cmd = modal_basis @ modal_cmd
+                            dms[0].updateDMShape(zonal_cmd)
+                        else:
+                            res_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
+                            modal_error = (-1.0) * (reconstructor @ res_tensor)
+                            modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                            zonal_cmd = modal_basis @ modal_cmd
+                            dms[0].updateDMShape(zonal_cmd)
 
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)

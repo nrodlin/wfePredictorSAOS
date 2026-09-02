@@ -120,18 +120,24 @@ def main():
         ol_script = os.path.join(script_dir, 'redArmSolarSCAO_01_OL.py')
         run_step([python_exec, ol_script] + sensor_flags, logger, f"OL Validation [{sensor}x{sensor}]")
 
-        # 2. Closed Loop Baseline (delay=2)
+        # 2a. Closed Loop Baseline (delay=2, sin predictor)
         cl_script = os.path.join(script_dir, 'redArmSolarSCAO_02_CL_baseline.py')
-        run_step([python_exec, cl_script, '--delay', '2'] + sensor_flags, logger, f"CL Baseline (delay=2) [{sensor}x{sensor}]")
+        run_step([python_exec, cl_script, '--delay', '2', '--predictor', 'none'] + sensor_flags, logger, f"CL Baseline (delay=2) [{sensor}x{sensor}]")
 
-        # 3a. Closed Loop POL (Linear Predictor)
+        # 2b. Closed Loop Directo / a pelo (Predictor Lineal sobre residuo)
+        run_step([python_exec, cl_script, '--delay', '2', '--predictor', 'linear'] + sensor_flags, logger, f"CL Direct Linear [{sensor}x{sensor}]")
+
+        # 2c. Closed Loop Directo / a pelo (Predictor LSTM sobre residuo)
+        run_step([python_exec, cl_script, '--delay', '2', '--predictor', 'lstm'] + sensor_flags, logger, f"CL Direct LSTM [{sensor}x{sensor}]")
+
+        # 3a. Closed Loop POL (Linear Predictor con reconstrucción POL)
         pol_script = os.path.join(script_dir, 'redArmSolarSCAO_03_CL_POL.py')
         run_step([python_exec, pol_script, '--predictor', 'linear'] + sensor_flags, logger, f"CL POL Linear [{sensor}x{sensor}]")
 
-        # 3b. Closed Loop POL (LSTM Predictor)
+        # 3b. Closed Loop POL (LSTM Predictor con reconstrucción POL)
         run_step([python_exec, pol_script, '--predictor', 'lstm'] + sensor_flags, logger, f"CL POL LSTM [{sensor}x{sensor}]")
 
-        # 4. Closed Loop Sin Cerrar (Parallel Monitoring)
+        # 4. Closed Loop Sin Cerrar (Monitorización pasiva y verificación de predictores)
         sc_script = os.path.join(script_dir, 'redArmSolarSCAO_04_CL_sin_cerrar.py')
         run_step([python_exec, sc_script] + sensor_flags, logger, f"CL Sin Cerrar [{sensor}x{sensor}]")
 
