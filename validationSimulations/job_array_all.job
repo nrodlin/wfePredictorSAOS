@@ -9,12 +9,12 @@
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=nicolas.linares@iac.es
 #SBATCH --qos=long
-#SBATCH --array=1-7
+#SBATCH --array=1-5
 
 # Usage examples:
 #   sbatch --array=1 job_array_all.job        # Runs ONLY Open Loop
-#   sbatch --array=1-7 job_array_all.job      # Runs ALL 7 cases in parallel across 7 nodes/GPUs
-#   sbatch --array=1,5,6 job_array_all.job    # Runs OL, POL Linear, and POL LSTM in parallel
+#   sbatch --array=1-5 job_array_all.job      # Runs ALL 5 cases in parallel across 5 nodes/GPUs
+#   sbatch --array=1,3,4 job_array_all.job    # Runs OL, POL Linear, and POL LSTM in parallel
 
 cd ~/code/wfePredictorSAOS/validationSimulations
 
@@ -38,27 +38,17 @@ case $TASK_ID in
         python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
         ;;
     3)
-        echo ">>> Case 3: CL Direct Linear"
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor linear --base_dir "$BASE_DIR" --skip_existing
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor linear --base_dir "$BASE_DIR" --skip_existing
-        ;;
-    4)
-        echo ">>> Case 4: CL Direct LSTM"
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
-        ;;
-    5)
-        echo ">>> Case 5: CL POL Linear"
+        echo ">>> Case 3: CL POL Linear"
         python -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor linear --base_dir "$BASE_DIR" --skip_existing
         python -u redArmSolarSCAO_03_CL_POL.py --sensor 50 --predictor linear --base_dir "$BASE_DIR" --skip_existing
         ;;
-    6)
-        echo ">>> Case 6: CL POL LSTM"
+    4)
+        echo ">>> Case 4: CL POL LSTM"
         python -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
         python -u redArmSolarSCAO_03_CL_POL.py --sensor 50 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
         ;;
-    7)
-        echo ">>> Case 7: CL Sin Cerrar"
+    5)
+        echo ">>> Case 5: CL Sin Cerrar (Monitorización pasiva)"
         python -u redArmSolarSCAO_04_CL_sin_cerrar.py --sensor 36 --base_dir "$BASE_DIR" --skip_existing
         python -u redArmSolarSCAO_04_CL_sin_cerrar.py --sensor 50 --base_dir "$BASE_DIR" --skip_existing
         ;;
