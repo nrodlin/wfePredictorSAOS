@@ -1,0 +1,71 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=48:00:00
+#SBATCH --job-name=saos_array
+#SBATCH --output=array_%A_%a.out
+#SBATCH --error=array_%A_%a.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+#SBATCH --qos=long
+#SBATCH --array=1-7
+
+# Usage examples:
+#   sbatch --array=1 job_array_all.job        # Runs ONLY Open Loop
+#   sbatch --array=1-7 job_array_all.job      # Runs ALL 7 cases in parallel across 7 nodes/GPUs
+#   sbatch --array=1,5,6 job_array_all.job    # Runs OL, POL Linear, and POL LSTM in parallel
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+python -u prepare_assets.py --base_dir "$BASE_DIR"
+
+TASK_ID=${SLURM_ARRAY_TASK_ID:-1}
+
+echo "=== Running Array Task ID: $TASK_ID on $(hostname) at $(date) ==="
+
+case $TASK_ID in
+    1)
+        echo ">>> Case 1: Open Loop (OL)"
+        python -u redArmSolarSCAO_01_OL.py --sensor 36 --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_01_OL.py --sensor 50 --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    2)
+        echo ">>> Case 2: CL Baseline (Delay=2, Sin Predictor)"
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    3)
+        echo ">>> Case 3: CL Direct Linear"
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor linear --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor linear --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    4)
+        echo ">>> Case 4: CL Direct LSTM"
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    5)
+        echo ">>> Case 5: CL POL Linear"
+        python -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor linear --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_03_CL_POL.py --sensor 50 --predictor linear --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    6)
+        echo ">>> Case 6: CL POL LSTM"
+        python -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_03_CL_POL.py --sensor 50 --predictor lstm --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    7)
+        echo ">>> Case 7: CL Sin Cerrar"
+        python -u redArmSolarSCAO_04_CL_sin_cerrar.py --sensor 36 --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_04_CL_sin_cerrar.py --sensor 50 --base_dir "$BASE_DIR" --skip_existing
+        ;;
+    *)
+        echo "Unknown task ID: $TASK_ID"
+        exit 1
+        ;;
+esac
+
+echo "=== Array Task ID $TASK_ID completed at $(date) ==="

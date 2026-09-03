@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=48:00:00
+#SBATCH --job-name=saos_02_CL_base
+#SBATCH --output=cl_base_%j.out
+#SBATCH --error=cl_base_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+#SBATCH --qos=long
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+echo "=== Starting CL Baseline (No Predictor, Delay=2) ==="
+python -u prepare_assets.py --base_dir "$BASE_DIR"
+
+python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
+python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
+
+echo "=== CL Baseline Completed ==="

@@ -1,0 +1,34 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=48:00:00
+#SBATCH --job-name=saos_01_OL
+#SBATCH --output=ol_%j.out
+#SBATCH --error=ol_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+#SBATCH --qos=long
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+echo "=== Starting Open Loop (OL) Simulations ==="
+echo "Date: $(date)"
+echo "Host: $(hostname)"
+echo "Base dir: $BASE_DIR"
+
+# Pre-generate / verify assets first
+python -u prepare_assets.py --base_dir "$BASE_DIR"
+
+# Run Open Loop for sensor 36x36
+echo ">>> Running OL for sensor 36x36..."
+python -u redArmSolarSCAO_01_OL.py --sensor 36 --base_dir "$BASE_DIR" --skip_existing
+
+# Run Open Loop for sensor 50x50
+echo ">>> Running OL for sensor 50x50..."
+python -u redArmSolarSCAO_01_OL.py --sensor 50 --base_dir "$BASE_DIR" --skip_existing
+
+echo "=== Open Loop Simulations Completed ==="
+echo "Date: $(date)"
