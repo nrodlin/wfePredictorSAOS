@@ -324,7 +324,7 @@ def main():
 
                 controller_kwargs = {
                     'rcond': 0.025,
-                    'beta': 1e-4,
+                    'beta': 5e-4,
                     'gain': [args.gain],
                     'decay': [args.decay],
                     'ki': [0.0]
@@ -333,7 +333,7 @@ def main():
                 controller = Controller(
                     telescope=est_tel,
                     interactionMatrix=im_handler,
-                    reconstructionMethod='inversion',
+                    reconstructionMethod='tikhonov',
                     controllerType='leaky',
                     logger=logger,
                     **controller_kwargs
@@ -356,7 +356,7 @@ def main():
                 elif args.predictor == 'linear':
                     predictor = OnlineLinearSlopePredictor(
                         n_slopes=shwfs.nSignal,
-                        past_horizon=8,
+                        past_horizon=4,
                         steps_ahead=args.delay
                     )
                 else:
