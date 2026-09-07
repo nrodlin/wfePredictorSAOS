@@ -362,18 +362,32 @@ def main():
                 else:
                     predictor = None
 
-                mode_name = 'CL Baseline' if args.predictor == 'none' else f'CL Direct ({args.predictor.upper()})'
+                im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
+                cmd_history = [torch.zeros((n_modes, 1), dtype=torch.float64, device=device) for _ in range(max(4, args.delay + 2))]
+
+                mode_name = 'CL Baseline (POL)' if args.predictor == 'none' else f'CL Direct ({args.predictor.upper()})'
                 logger.info(f"Beginning {mode_name} loop ({args.n_iterations} iterations, {vibr_label})")
                 for i in range(args.n_iterations):
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
-                    if args.predictor == 'none':
-                        cmd = controller.computeControlAction(scao_light_path_list)
-                        for j in range(len(dms)):
-                            dms[j].updateDMShape(cmd[j])
+                    res_slopes = scao_light_path_list[0].get_wavefront_error()
+                    res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
+
+                    if args.delay == 0:
+                        cmd_delayed = cmd_history[-1]
                     else:
-                        res_slopes = scao_light_path_list[0].get_wavefront_error()
+                        cmd_delayed = cmd_history[-args.delay]
+
+                    if args.predictor == 'none':
+                        # POL Baseline control (reconstructing open-loop turbulence)
+                        pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed
+                        modal_target = (-1.0) * (reconstructor @ pol_slopes_tensor)
+                        modal_error = modal_target - modal_cmd
+                        modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                        zonal_cmd = modal_basis @ modal_cmd
+                        dms[0].updateDMShape(zonal_cmd)
+                    else:
                         predictor.push(res_slopes)
                         if predictor.ready():
                             pred_res = torch.as_tensor(predictor.predict(), dtype=torch.float64, device=device).unsqueeze(1)
@@ -382,11 +396,13 @@ def main():
                             zonal_cmd = modal_basis @ modal_cmd
                             dms[0].updateDMShape(zonal_cmd)
                         else:
-                            res_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
-                            modal_error = (-1.0) * (reconstructor @ res_tensor)
+                            modal_error = (-1.0) * (reconstructor @ res_slopes_tensor)
                             modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                             zonal_cmd = modal_basis @ modal_cmd
                             dms[0].updateDMShape(zonal_cmd)
+
+                    cmd_history.pop(0)
+                    cmd_history.append(modal_cmd.clone())
 
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)

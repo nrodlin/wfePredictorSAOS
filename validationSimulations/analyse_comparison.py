@@ -191,29 +191,36 @@ def main():
                   f"{r.get('rmse_pol_lstm', 0):<14.5f} {r.get('impr_lstm_pct', 0):>+8.2f}%")
 
     # 3. Closed Loop Science Strehl & Solar Contrast Comparison
-    cl_baseline = analyze_cl_strehl(base_dir, 'cl_baseline', args.sensor)
-    cl_direct_lin = analyze_cl_strehl(base_dir, 'cl_direct_linear', args.sensor)
-    cl_direct_lstm = analyze_cl_strehl(base_dir, 'cl_direct_lstm', args.sensor)
-    cl_pol_lin = analyze_cl_strehl(base_dir, 'cl_pol_linear', args.sensor)
-    cl_pol_lstm = analyze_cl_strehl(base_dir, 'cl_pol_lstm', args.sensor)
+    known_folders = ['cl_baseline', 'cl_direct_linear', 'cl_direct_lstm', 'cl_pol_linear', 'cl_pol_lstm', 'cl_pol_linear_gain0.6', 'cl_pol_lstm_gain0.6']
+    existing_folders = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d)) and d.startswith('cl_')]
+    for d in existing_folders:
+        if d not in known_folders:
+            known_folders.append(d)
 
-    all_cl = cl_baseline + cl_direct_lin + cl_direct_lstm + cl_pol_lin + cl_pol_lstm
+    all_cl = []
+    found_folders = []
+    for folder in known_folders:
+        res = analyze_cl_strehl(base_dir, folder, args.sensor)
+        if res:
+            all_cl.extend(res)
+            found_folders.append(folder)
+
     if all_cl:
         print("\n" + "#" * 140)
         print(" [3] CLOSED LOOP SCIENCE QUALITY (Point-Source Strehl & Solar Granulation Contrast)")
         print("#" * 140)
-        print(f"{'Configuration':<20} | {'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'Strehl @ 56 Hz':<24} | {'Strehl @ 5 Hz':<24} | {'Solar Contrast':<16}")
+        print(f"{'Configuration':<26} | {'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'Strehl @ 56 Hz':<24} | {'Strehl @ 5 Hz':<24} | {'Solar Contrast':<16}")
         print("-" * 140)
         for r in sorted(all_cl, key=lambda x: (x['sensor'], x['vibr'], x['atm'], x['draw'], x['case'])):
             s56_str = f"{r['strehl_56hz']:.5f} ± {r['std_56hz']:.5f}" if r['strehl_56hz'] is not None else "N/A"
             s5_str = f"{r['strehl_5hz']:.5f} ± {r['std_5hz']:.5f}" if r['strehl_5hz'] is not None else "N/A"
             cntr_str = f"{r['contrast_solar']:.4f}" if r.get('contrast_solar') is not None else "N/A"
-            print(f"{r['case']:<20} | {r['sensor']:<8} | {r['atm']:<6} {r['draw']:<6} {r['vibr']:<8} | {s56_str:<24} | {s5_str:<24} | {cntr_str:<16}")
+            print(f"{r['case']:<26} | {r['sensor']:<8} | {r['atm']:<6} {r['draw']:<6} {r['vibr']:<8} | {s56_str:<24} | {s5_str:<24} | {cntr_str:<16}")
 
         print("\n" + "-" * 100)
         print(" GLOBAL AVERAGE SCIENCE PERFORMANCE SUMMARY BY CONFIGURATION")
         print("-" * 100)
-        for folder in ['cl_baseline', 'cl_direct_linear', 'cl_direct_lstm', 'cl_pol_linear', 'cl_pol_lstm']:
+        for folder in found_folders:
             for sens in (['36x36', '50x50'] if not args.sensor or args.sensor == 'all' else [f"{args.sensor}x{args.sensor}"]):
                 subset_56 = [r['strehl_56hz'] for r in all_cl if r['case'] == folder and r['sensor'] == sens and r['strehl_56hz'] is not None]
                 subset_5 = [r['strehl_5hz'] for r in all_cl if r['case'] == folder and r['sensor'] == sens and r['strehl_5hz'] is not None]
@@ -222,7 +229,7 @@ def main():
                 s5_summary = f"{np.mean(subset_5):.5f} ± {np.std(subset_5):.5f}" if subset_5 else "N/A"
                 cntr_summary = f"{np.mean(subset_c):.4f}" if subset_c else "N/A"
                 if subset_56 or subset_5 or subset_c:
-                    print(f" -> {folder:<20} [{sens}]: Strehl@56Hz = {s56_summary:<22} | Strehl@5Hz = {s5_summary:<22} | Contrast = {cntr_summary}")
+                    print(f" -> {folder:<26} [{sens}]: Strehl@56Hz = {s56_summary:<22} | Strehl@5Hz = {s5_summary:<22} | Contrast = {cntr_summary}")
 
     print("=" * 140)
 

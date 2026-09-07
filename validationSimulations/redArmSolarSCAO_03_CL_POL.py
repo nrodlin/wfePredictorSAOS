@@ -38,11 +38,13 @@ except ImportError:
 def parse_args():
     parser = argparse.ArgumentParser(description="Closed-Loop POL (Pseudo-Open-Loop) Simulation with Predictor (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
-    parser.add_argument('--predictor', type=str, default='lstm', choices=['lstm', 'linear'], help="Predictor type (lstm or linear)")
+    parser.add_argument('--predictor', type=str, default='lstm', choices=['lstm', 'linear', 'none'], help="Predictor type (lstm, linear, or none for POL baseline)")
+    parser.add_argument('--delay', type=int, default=2, help="Loop delay in samples (default 2)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
     parser.add_argument('--gain', type=float, default=0.25, help="Loop gain (default 0.25)")
     parser.add_argument('--decay', type=float, default=0.999, help="Leaky decay factor (default 0.999)")
+    parser.add_argument('--beta', type=float, default=5e-4, help="Tikhonov regularization beta (default 5e-4)")
     parser.add_argument('--atm', type=str, default=None, help="Atmosphere case to run (e.g. atm1). Default: all")
     parser.add_argument('--draw', type=str, default=None, help="Draw to run (e.g. draw1). Default: all")
     parser.add_argument('--no_vibr_only', action='store_true', help="Run only no-vibration cases")
@@ -50,6 +52,7 @@ def parse_args():
     parser.add_argument('--generate_atm', action='store_true', help="Generate and overwrite atmosphere phase screens")
     parser.add_argument('--base_dir', type=str, default=None, help="Base directory for simulations (default: /mnt/nas-mcao/predictor_sims or ~/simulations)")
     parser.add_argument('--skip_existing', action='store_true', help="Skip simulation if result file already exists")
+    parser.add_argument('--tag', type=str, default=None, help="Optional tag for results subfolder and filename (e.g. gain0.6)")
     parser.add_argument('--test', action='store_true', help="Quick test mode (50 iterations, atm1 draw1 noVibr)")
     return parser.parse_args()
 
@@ -120,7 +123,15 @@ def main():
     mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
 
     ps_dir = os.path.join(base_dir, 'phase_screens')
-    res_dir = os.path.join(base_dir, 'results', f'cl_pol_{args.predictor}')
+    delay_str = f"_{args.delay}delay" if args.delay != 2 else ""
+    if args.tag:
+        suffix = f"_{args.tag}"
+    elif args.gain != 0.25 or args.decay != 0.999:
+        suffix = f"_gain{args.gain}" + (f"_decay{args.decay}" if args.decay != 0.999 else "")
+    else:
+        suffix = ""
+    folder_name = f'cl_pol_{args.predictor}{delay_str}{suffix}'
+    res_dir = os.path.join(base_dir, 'results', folder_name)
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
@@ -209,7 +220,7 @@ def main():
                 else:
                     vibrations = None
 
-                res_file_name = f"res_cl_pol_{args.predictor}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                res_file_name = f"res_cl_pol_{args.predictor}{delay_str}{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
 
                 if args.skip_existing and os.path.exists(res_file_path):
@@ -299,15 +310,15 @@ def main():
                 scao_light_path_list = []
                 # WFS & Solar Science branch (LP0)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=scicam_solar, delay=2)
+                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=scicam_solar, delay=args.delay)
 
                 # Science branch 56 Hz (LP1)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_56, delay=2)
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_56, delay=args.delay)
 
                 # Science branch 5 Hz (LP2)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_5, delay=2)
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_5, delay=args.delay)
 
                 lightPathTasks = [delayed(lp.propagate)(True) for lp in scao_light_path_list]
 
@@ -318,7 +329,7 @@ def main():
 
                 controller_kwargs = {
                     'rcond': 0.025,
-                    'beta': 5e-4,
+                    'beta': args.beta,
                     'gain': [args.gain],
                     'decay': [args.decay],
                     'ki': [0.0]
@@ -343,14 +354,16 @@ def main():
                         hidden_size=16,
                         n_axis=1
                     )
-                else:
+                elif args.predictor == 'linear':
                     predictor = OnlineLinearSlopePredictor(
                         n_slopes=n_slopes,
                         past_horizon=4,
                         steps_ahead=2
                     )
+                else:
+                    predictor = None
 
-                # Interaction matrix tensor for POL reconstruction: s_pol = s_res + IM @ cmd_delayed
+                # Interaction matrix tensor for POL reconstruction: s_pol = s_res - IM @ cmd_delayed
                 im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
                 offset = controller.discarded_modes[0]
                 reconstructor = controller.reconstructor[0].to(device)
@@ -360,7 +373,8 @@ def main():
                 # History buffer for modal commands (delay=2)
                 cmd_history = [torch.zeros((n_modes, 1), dtype=torch.float64, device=device) for _ in range(4)]
 
-                logger.info(f"Beginning CL POL ({args.predictor.upper()}) loop ({args.n_iterations} iterations, {vibr_label})")
+                mode_label = f"CL POL ({args.predictor.upper()})" if args.predictor != 'none' else "CL POL (Baseline / No Predictor)"
+                logger.info(f"Beginning {mode_label} loop ({args.n_iterations} iterations, {vibr_label})")
                 for i in range(args.n_iterations):
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
@@ -369,28 +383,39 @@ def main():
                     res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 
-                    # Delayed modal command applied 2 samples ago
-                    cmd_delayed_2 = cmd_history[-2]
+                    # Delayed modal command applied delay samples ago
+                    if args.delay == 0:
+                        cmd_delayed = cmd_history[-1]
+                    else:
+                        cmd_delayed = cmd_history[-args.delay]
 
-                    # Pseudo-Open-Loop slopes reconstruction: s_pol = s_res - IM @ cmd(t-2)
-                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed_2
+                    # Pseudo-Open-Loop slopes reconstruction: s_pol = s_res - IM @ cmd(t-delay)
+                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed
                     pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
 
-                    predictor.push(pol_slopes)
+                    if predictor is not None:
+                        predictor.push(pol_slopes)
 
-                    if predictor.ready():
-                        predicted_pol = torch.as_tensor(predictor.predict(), dtype=torch.float64, device=device).unsqueeze(1)
-                        # Modal target from predicted open-loop slopes: c_target = -Reconstructor @ predicted_pol
-                        modal_target = (-1.0) * (reconstructor @ predicted_pol)
-                        # Modal error relative to current DM command: error = modal_target - modal_cmd
-                        modal_error = modal_target - modal_cmd
-                        # Leaky integrator update on residual error
-                        modal_cmd = args.gain * modal_error + args.decay * modal_cmd
-                        zonal_cmd = modal_basis @ modal_cmd
-                        dms[0].updateDMShape(zonal_cmd)
+                        if predictor.ready():
+                            predicted_pol = torch.as_tensor(predictor.predict(), dtype=torch.float64, device=device).unsqueeze(1)
+                            # Modal target from predicted open-loop slopes: c_target = -Reconstructor @ predicted_pol
+                            modal_target = (-1.0) * (reconstructor @ predicted_pol)
+                            # Modal error relative to current DM command: error = modal_target - modal_cmd
+                            modal_error = modal_target - modal_cmd
+                            # Leaky integrator update on residual error
+                            modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                            zonal_cmd = modal_basis @ modal_cmd
+                            dms[0].updateDMShape(zonal_cmd)
+                        else:
+                            # Fallback standard closed loop until predictor buffer is full
+                            modal_error = (-1.0) * (reconstructor @ res_slopes_tensor)
+                            modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                            zonal_cmd = modal_basis @ modal_cmd
+                            dms[0].updateDMShape(zonal_cmd)
                     else:
-                        # Fallback standard closed loop until predictor buffer is full
-                        modal_error = (-1.0) * (reconstructor @ res_slopes_tensor)
+                        # Direct POL Control without predictor (ZOH on POL)
+                        modal_target = (-1.0) * (reconstructor @ pol_slopes_tensor)
+                        modal_error = modal_target - modal_cmd
                         modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                         zonal_cmd = modal_basis @ modal_cmd
                         dms[0].updateDMShape(zonal_cmd)
