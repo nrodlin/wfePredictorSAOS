@@ -193,7 +193,7 @@ def prepare_all_assets(base_dir=None, force_atm=False, force_modal=False, force_
             'fov': 9.269,
             'plate_scale': 0.403,
             'nModes': 500,
-            'stroke': 8e-7
+            'stroke': 3.15e-6
         },
         {
             'sensor': 50,
@@ -202,13 +202,13 @@ def prepare_all_assets(base_dir=None, force_atm=False, force_modal=False, force_
             'im_file': os.path.join(im_dir, 'predictor_50x50_IM.h5'),
             'typeDM': 'cartesian',
             'nActs': 51,
-            'validActThreshpercentage': 0.5,
+            'validActThreshpercentage': 0.7533,
             'dynamicModel': os.path.join(mirror_models_dir, 'm7_discrete_model.h5'),
             'optBand': 'V',
             'fov': 9.975,
             'plate_scale': 0.475,
-            'nModes': 1077,
-            'stroke': 9e-7
+            'nModes': None,
+            'stroke': 2.7e-6
         }
     ]
 
@@ -259,6 +259,8 @@ def prepare_all_assets(base_dir=None, force_atm=False, force_modal=False, force_
             logger.info(f"Generating new modal basis for {cfg['name']}...")
             t_start = time.time()
             im_handler.generate_modal_basis()
+            if os.path.exists(mb_file):
+                os.remove(mb_file)
             im_handler.save_modalBasis(mb_file)
             logger.info(f"Modal basis saved to {mb_file} in {time.time() - t_start:.2f} s")
 
@@ -269,7 +271,10 @@ def prepare_all_assets(base_dir=None, force_atm=False, force_modal=False, force_
         else:
             logger.info(f"Measuring new Interaction Matrix for {cfg['name']} (stroke={cfg['stroke']}, nModes={cfg['nModes']})...")
             t_start = time.time()
-            im_handler.measure(modal_basis='zernike', stroke=cfg['stroke'], nModes=[cfg['nModes']])
+            n_modes_arg = [cfg['nModes']] if cfg['nModes'] is not None else None
+            im_handler.measure(modal_basis='zernike', stroke=cfg['stroke'], nModes=n_modes_arg)
+            if os.path.exists(im_file):
+                os.remove(im_file)
             im_handler.save_IM(im_file)
             logger.info(f"Interaction Matrix saved to {im_file} in {time.time() - t_start:.2f} s")
 

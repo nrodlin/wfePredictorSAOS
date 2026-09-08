@@ -1,14 +1,13 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
-#SBATCH --time=48:00:00
+#SBATCH --time=15:00:00
 #SBATCH --job-name=saos_array
 #SBATCH --output=array_%A_%a.out
 #SBATCH --error=array_%A_%a.err
 #SBATCH --gres=gpu:1
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=nicolas.linares@iac.es
-#SBATCH --qos=long
 #SBATCH --array=1-5
 
 # Usage examples:

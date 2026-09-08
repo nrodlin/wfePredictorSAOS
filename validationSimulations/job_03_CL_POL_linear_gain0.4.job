@@ -1,14 +1,13 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
-#SBATCH --time=48:00:00
+#SBATCH --time=15:00:00
 #SBATCH --job-name=saos_03_POL_lin_g04
 #SBATCH --output=pol_lin_g04_%j.out
 #SBATCH --error=pol_lin_g04_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=nicolas.linares@iac.es
-#SBATCH --qos=long
 
 cd ~/code/wfePredictorSAOS/validationSimulations
 

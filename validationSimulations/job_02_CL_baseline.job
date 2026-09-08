@@ -1,14 +1,13 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
-#SBATCH --time=48:00:00
+#SBATCH --time=15:00:00
 #SBATCH --job-name=saos_02_CL_base
 #SBATCH --output=cl_base_%j.out
 #SBATCH --error=cl_base_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=nicolas.linares@iac.es
-#SBATCH --qos=long
 
 cd ~/code/wfePredictorSAOS/validationSimulations
 
