@@ -247,7 +247,7 @@ def main():
                 else:
                     sun = ExtendedSource(optBand='V', coordinates=[0, 0], nSubDirs=3, fov=9.975, subDir_margin=4.0, patch_padding=5.0, logger=logger)
                     ngs = Source(magnitude=5, optBand='V0', coordinates=[0, 0], logger=logger)
-                    dm_params = {'dynamicModel': os.path.join(mirror_models_dir, 'm7_discrete_model.h5'), 'validActThreshpercentage': 0.5}
+                    dm_params = {'dynamicModel': os.path.join(mirror_models_dir, 'm7_discrete_model.h5'), 'validActThreshpercentage': 0.7533}
                     dm = DeformableMirror(telescope=est_tel, nActs=51, altitude=0, typeDM='cartesian', logger=logger, **dm_params)
                     wfs_plate_scale = 0.475
                     wfs_fov = 9.975
