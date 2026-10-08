@@ -30,6 +30,7 @@ from SAOS.Savepoint import Savepoint
 
 from wfePredictorSAOS.predictor.onlinePredictor import OnlineSlopePredictor
 from wfePredictorSAOS.predictor.onlineLinearPredictor import OnlineLinearSlopePredictor
+from wfePredictorSAOS.predictor.pseudoOpenLoop import PseudoOpenLoop
 
 try:
     from atmosphereCases import atm_cases
@@ -313,12 +314,15 @@ def main():
                 im_handler.load_modalBasis(load_filename_modalBasis)
                 im_handler.load_IM(load_filename_IM)
 
+                # nModes must match the modes measured in the IM (required by the joint reconstructor of SAOS)
+                n_im_modes = im_handler.interaction_matrix_warehouse[0][0]['IM'].shape[1]
                 controller_kwargs = {
                     'rcond': 0.025,
                     'beta': 5e-4,
                     'gain': [args.gain],
                     'decay': [args.decay],
-                    'ki': [0.0]
+                    'ki': [0.0],
+                    'nModes': [n_im_modes]
                 }
 
                 controller = Controller(
@@ -346,8 +350,8 @@ def main():
                     steps_ahead=2
                 )
 
-                im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
-                cmd_history = [torch.zeros((n_modes, 1), dtype=torch.float64, device=device) for _ in range(4)]
+                # POL reconstruction (LightPath delay = 2): s_pol(i-2) = s_res(i-2) - IM @ (modal shape applied by the DM at i-2)
+                pol = PseudoOpenLoop(im_handler.interaction_matrix_warehouse[0][0]['IM'], dms[0], 2, n_modes, device=device)
 
                 slopes_res_list = []
                 slopes_pol_list = []
@@ -362,24 +366,19 @@ def main():
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
+                    # Residual slopes measured at t-2 and POL reconstruction (before the DM is updated in this iteration)
+                    res_slopes = scao_light_path_list[0].get_wavefront_error()
+                    res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
+                    pol_slopes_tensor = pol.reconstruct(res_slopes_tensor)
+                    pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
+
                     # Standard closed loop computes control action & updates DM
                     cmd = controller.computeControlAction(scao_light_path_list)
                     for j in range(len(dms)):
                         dms[j].updateDMShape(cmd[j])
 
-                    # Current modal command from controller
-                    curr_modal_cmd = controller.command_previous[0].to(device)
-
-                    # Residual slopes at t-2
-                    res_slopes = scao_light_path_list[0].get_wavefront_error()
-                    res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
-
-                    # Delayed modal command applied 2 samples ago
-                    cmd_delayed_2 = cmd_history[-2]
-
-                    # Reconstructed POL slopes: s_pol = s_res - IM @ cmd(t-2)
-                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed_2
-                    pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
+                    # Track the DM shape for the POL reconstruction
+                    pol.update(controller.command_previous[0])
 
                     # Push POL slopes to predictors
                     predictor_lstm.push(pol_slopes)
@@ -393,10 +392,6 @@ def main():
                         slopes_pol_list.append(pol_slopes)
                         pred_lstm_list.append(pred_lstm)
                         pred_linear_list.append(pred_lin)
-
-                    # Update modal command history
-                    cmd_history.pop(0)
-                    cmd_history.append(curr_modal_cmd.clone())
 
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)
@@ -429,8 +424,9 @@ def main():
                     rmse_lin = float(np.sqrt(mse_lin))
                     rmse_lstm = float(np.sqrt(mse_lstm))
 
-                    impr_lin = float((mse_zoh - mse_lin) / max(mse_zoh, 1e-12) * 100.0)
-                    impr_lstm = float((mse_zoh - mse_lstm) / max(mse_zoh, 1e-12) * 100.0)
+                    # Single improvement metric across the repo: RMSE reduction w.r.t. ZOH
+                    impr_lin = float((rmse_zoh - rmse_lin) / max(rmse_zoh, 1e-12) * 100.0)
+                    impr_lstm = float((rmse_zoh - rmse_lstm) / max(rmse_zoh, 1e-12) * 100.0)
 
                     metrics = {
                         'sensor': f"{args.sensor}x{args.sensor}",

@@ -25,6 +25,13 @@ def get_results_base_dir(custom_base_dir=None):
         return '/mnt/nas-mcao/predictor_sims/results'
     return os.path.expanduser('~/simulations/results')
 
+def rmse_improvement(rmse_ref, rmse_pred):
+    """Single improvement metric of the repo: RMSE reduction [%] w.r.t. the ZOH reference.
+    Recomputed from the stored RMSEs so that old JSON files (MSE-based improvement) are reported consistently."""
+    if rmse_ref is None or rmse_pred is None or rmse_ref <= 0:
+        return float('nan')
+    return (rmse_ref - rmse_pred) / rmse_ref * 100.0
+
 def analyze_open_loop(base_dir, sensor_filter=None):
     ol_dir = os.path.join(base_dir, 'predictor_ol')
     if not os.path.exists(ol_dir):
@@ -166,29 +173,29 @@ def main():
     ol_res = analyze_open_loop(base_dir, args.sensor)
     if ol_res:
         print("\n" + "#" * 140)
-        print(" [1] OPEN LOOP (OL) PREDICTION ERRORS (Slope RMSE in px & % Improvement vs ZOH delay=2)")
+        print(" [1] OPEN LOOP (OL) PREDICTION ERRORS (Slope RMSE in px & % RMSE reduction vs ZOH delay=2)")
         print("#" * 140)
         print(f"{'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'ZOH RMSE':<12} | {'Linear RMSE':<14} {'(Impr %)':<10} | {'LSTM RMSE':<14} {'(Impr %)':<10}")
         print("-" * 140)
         for r in ol_res:
             print(f"{r.get('sensor', ''):<8} | {r.get('atm', ''):<6} {r.get('draw', ''):<6} {r.get('vibr', ''):<8} | "
                   f"{r.get('rmse_zoh', 0):<12.5f} | "
-                  f"{r.get('rmse_linear', 0):<14.5f} {r.get('impr_linear_pct', 0):>+8.2f}% | "
-                  f"{r.get('rmse_lstm', 0):<14.5f} {r.get('impr_lstm_pct', 0):>+8.2f}%")
+                  f"{r.get('rmse_linear', 0):<14.5f} {rmse_improvement(r.get('rmse_zoh'), r.get('rmse_linear')):>+8.2f}% | "
+                  f"{r.get('rmse_lstm', 0):<14.5f} {rmse_improvement(r.get('rmse_zoh'), r.get('rmse_lstm')):>+8.2f}%")
 
     # 2. Closed Loop Sin Cerrar Analysis
     sc_res = analyze_cl_sin_cerrar(base_dir, args.sensor)
     if sc_res:
         print("\n" + "#" * 140)
-        print(" [2] CLOSED LOOP 'SIN CERRAR' (POL Slope RMSE in px & % Improvement vs ZOH)")
+        print(" [2] CLOSED LOOP 'SIN CERRAR' (POL Slope RMSE in px & % RMSE reduction vs ZOH)")
         print("#" * 140)
         print(f"{'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'POL ZOH RMSE':<14} | {'POL Lin RMSE':<14} {'(Impr %)':<10} | {'POL LSTM RMSE':<14} {'(Impr %)':<10}")
         print("-" * 140)
         for r in sc_res:
             print(f"{r.get('sensor', ''):<8} | {r.get('atm', ''):<6} {r.get('draw', ''):<6} {r.get('vibr', ''):<8} | "
                   f"{r.get('rmse_pol_zoh', 0):<14.5f} | "
-                  f"{r.get('rmse_pol_linear', 0):<14.5f} {r.get('impr_linear_pct', 0):>+8.2f}% | "
-                  f"{r.get('rmse_pol_lstm', 0):<14.5f} {r.get('impr_lstm_pct', 0):>+8.2f}%")
+                  f"{r.get('rmse_pol_linear', 0):<14.5f} {rmse_improvement(r.get('rmse_pol_zoh'), r.get('rmse_pol_linear')):>+8.2f}% | "
+                  f"{r.get('rmse_pol_lstm', 0):<14.5f} {rmse_improvement(r.get('rmse_pol_zoh'), r.get('rmse_pol_lstm')):>+8.2f}%")
 
     # 3. Closed Loop Science Strehl & Solar Contrast Comparison
     known_folders = ['cl_baseline', 'cl_direct_linear', 'cl_direct_lstm', 'cl_pol_linear', 'cl_pol_lstm', 'cl_pol_linear_gain0.6', 'cl_pol_lstm_gain0.6']

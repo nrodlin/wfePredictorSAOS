@@ -29,6 +29,7 @@ from SAOS.Savepoint import Savepoint
 
 from wfePredictorSAOS.predictor.onlinePredictor import OnlineSlopePredictor
 from wfePredictorSAOS.predictor.onlineLinearPredictor import OnlineLinearSlopePredictor
+from wfePredictorSAOS.predictor.pseudoOpenLoop import PseudoOpenLoop
 
 try:
     from atmosphereCases import atm_cases
@@ -42,7 +43,11 @@ def parse_args():
     parser.add_argument('--delay', type=int, default=2, help="Loop delay in samples (default 2)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
-    parser.add_argument('--gain', type=float, default=0.25, help="Loop gain (default 0.25)")
+    parser.add_argument('--gain', type=float, default=None, help="Gain applied to the (predicted) POL target: c = gain*(target - c) + decay*c. "
+                        "Default: 0.25 without predictor, 1.0 with predictor (applies the prediction directly, a lower gain low-pass filters it adding (1-g)/g samples of lag)")
+    parser.add_argument('--warmup_gain', type=float, default=0.25, help="Integrator gain on the residual slopes while the predictor buffer fills (default 0.25)")
+    parser.add_argument('--horizon', type=int, default=2, help="Prediction horizon [samples] of the linear predictor (default 2, as the LSTM training). "
+                        "The command computed at i acts at i+2..i+3 with the ASM dynamics, so the full lag from s(i-d) is ~delay+2.4")
     parser.add_argument('--decay', type=float, default=0.999, help="Leaky decay factor (default 0.999)")
     parser.add_argument('--beta', type=float, default=5e-4, help="Tikhonov regularization beta (default 5e-4)")
     parser.add_argument('--atm', type=str, default=None, help="Atmosphere case to run (e.g. atm1). Default: all")
@@ -123,13 +128,15 @@ def main():
     mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
 
     ps_dir = os.path.join(base_dir, 'phase_screens')
+    if args.gain is None:
+        args.gain = 0.25 if args.predictor == 'none' else 1.0
+
     delay_str = f"_{args.delay}delay" if args.delay != 2 else ""
     if args.tag:
         suffix = f"_{args.tag}"
-    elif args.gain != 0.25 or args.decay != 0.999:
-        suffix = f"_gain{args.gain}" + (f"_decay{args.decay}" if args.decay != 0.999 else "")
     else:
-        suffix = ""
+        # The gain is always part of the name: the POL fix and the predictor gain changed the meaning of the old folders
+        suffix = f"_gain{args.gain}" + (f"_decay{args.decay}" if args.decay != 0.999 else "") + (f"_h{args.horizon}" if args.predictor == 'linear' and args.horizon != 2 else "")
     folder_name = f'cl_pol_{args.predictor}{delay_str}{suffix}'
     res_dir = os.path.join(base_dir, 'results', folder_name)
     os.makedirs(ps_dir, exist_ok=True)
@@ -327,12 +334,15 @@ def main():
                 im_handler.load_modalBasis(load_filename_modalBasis)
                 im_handler.load_IM(load_filename_IM)
 
+                # nModes must match the modes measured in the IM (required by the joint reconstructor of SAOS)
+                n_im_modes = im_handler.interaction_matrix_warehouse[0][0]['IM'].shape[1]
                 controller_kwargs = {
                     'rcond': 0.025,
                     'beta': args.beta,
                     'gain': [args.gain],
                     'decay': [args.decay],
-                    'ki': [0.0]
+                    'ki': [0.0],
+                    'nModes': [n_im_modes]
                 }
 
                 controller = Controller(
@@ -358,23 +368,24 @@ def main():
                     predictor = OnlineLinearSlopePredictor(
                         n_slopes=n_slopes,
                         past_horizon=4,
-                        steps_ahead=2
+                        steps_ahead=args.horizon
                     )
                 else:
                     predictor = None
 
-                # Interaction matrix tensor for POL reconstruction: s_pol = s_res - IM @ cmd_delayed
-                im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
+                # POL reconstruction: s_pol(i-d) = s_res(i-d) - IM @ (modal shape applied by the DM, including its dynamics, at i-d)
+                pol = PseudoOpenLoop(im_handler.interaction_matrix_warehouse[0][0]['IM'], dms[0], args.delay, n_modes, device=device)
                 offset = controller.discarded_modes[0]
                 reconstructor = controller.reconstructor[0].to(device)
                 modal_basis = controller.modal_basis[0][:, offset : offset + n_modes].to(device)
 
                 modal_cmd = torch.zeros((n_modes, 1), dtype=torch.float64, device=device)
-                # History buffer for modal commands (delay=2)
-                cmd_history = [torch.zeros((n_modes, 1), dtype=torch.float64, device=device) for _ in range(4)]
 
                 mode_label = f"CL POL ({args.predictor.upper()})" if args.predictor != 'none' else "CL POL (Baseline / No Predictor)"
-                logger.info(f"Beginning {mode_label} loop ({args.n_iterations} iterations, {vibr_label})")
+                logger.info(f"Beginning {mode_label} loop ({args.n_iterations} iterations, {vibr_label}) | POL gain {args.gain}, decay {args.decay}, delay {args.delay}"
+                            + (f", warmup gain {args.warmup_gain}" if predictor is not None else "") + (f", horizon {args.horizon}" if args.predictor == 'linear' else ""))
+                if args.predictor == 'lstm':
+                    logger.info(f"LSTM trained for a 2-sample horizon; the loop lag from s(i-d) is ~{args.delay}+2.4 samples (ASM dynamics)")
                 for i in range(args.n_iterations):
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
@@ -383,14 +394,8 @@ def main():
                     res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 
-                    # Delayed modal command applied delay samples ago
-                    if args.delay == 0:
-                        cmd_delayed = cmd_history[-1]
-                    else:
-                        cmd_delayed = cmd_history[-args.delay]
-
-                    # Pseudo-Open-Loop slopes reconstruction: s_pol = s_res - IM @ cmd(t-delay)
-                    pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed
+                    # Pseudo-Open-Loop slopes reconstruction
+                    pol_slopes_tensor = pol.reconstruct(res_slopes_tensor)
                     pol_slopes = pol_slopes_tensor.squeeze(1).cpu().numpy()
 
                     if predictor is not None:
@@ -402,14 +407,15 @@ def main():
                             modal_target = (-1.0) * (reconstructor @ predicted_pol)
                             # Modal error relative to current DM command: error = modal_target - modal_cmd
                             modal_error = modal_target - modal_cmd
-                            # Leaky integrator update on residual error
+                            # POL update: c = gain*target + (decay-gain)*c. With gain=1 the predicted target is applied directly,
+                            # a lower gain low-pass filters it and adds ~(1-gain)/gain samples of lag
                             modal_cmd = args.gain * modal_error + args.decay * modal_cmd
                             zonal_cmd = modal_basis @ modal_cmd
                             dms[0].updateDMShape(zonal_cmd)
                         else:
                             # Fallback standard closed loop until predictor buffer is full
                             modal_error = (-1.0) * (reconstructor @ res_slopes_tensor)
-                            modal_cmd = args.gain * modal_error + args.decay * modal_cmd
+                            modal_cmd = args.warmup_gain * modal_error + args.decay * modal_cmd
                             zonal_cmd = modal_basis @ modal_cmd
                             dms[0].updateDMShape(zonal_cmd)
                     else:
@@ -420,9 +426,8 @@ def main():
                         zonal_cmd = modal_basis @ modal_cmd
                         dms[0].updateDMShape(zonal_cmd)
 
-                    # Update command history
-                    cmd_history.pop(0)
-                    cmd_history.append(modal_cmd.clone())
+                    # Track the DM shape for the POL reconstruction
+                    pol.update(modal_cmd)
 
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)

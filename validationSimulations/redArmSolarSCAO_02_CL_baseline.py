@@ -122,10 +122,12 @@ def main():
     mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
 
     ps_dir = os.path.join(base_dir, 'phase_screens')
+    # The gain is always part of the name: the baseline changed from a hand-made POL to the SAOS leaky integrator
+    suffix = f"_gain{args.gain}" + (f"_decay{args.decay}" if args.decay != 0.999 else "")
     if args.predictor == 'none':
-        res_dir = os.path.join(base_dir, 'results', 'cl_baseline')
+        res_dir = os.path.join(base_dir, 'results', f'cl_baseline{suffix}')
     else:
-        res_dir = os.path.join(base_dir, 'results', f'cl_direct_{args.predictor}')
+        res_dir = os.path.join(base_dir, 'results', f'cl_direct_{args.predictor}{suffix}')
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
@@ -212,9 +214,9 @@ def main():
                     vibrations = None
 
                 if args.predictor == 'none':
-                    res_file_name = f"res_cl_baseline_{args.delay}delay_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                    res_file_name = f"res_cl_baseline_{args.delay}delay{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 else:
-                    res_file_name = f"res_cl_direct_{args.predictor}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                    res_file_name = f"res_cl_direct_{args.predictor}{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
 
                 if args.skip_existing and os.path.exists(res_file_path):
@@ -322,12 +324,15 @@ def main():
                 im_handler.load_modalBasis(load_filename_modalBasis)
                 im_handler.load_IM(load_filename_IM)
 
+                # nModes must match the modes measured in the IM (required by the joint reconstructor of SAOS)
+                n_im_modes = im_handler.interaction_matrix_warehouse[0][0]['IM'].shape[1]
                 controller_kwargs = {
                     'rcond': 0.025,
                     'beta': 5e-4,
                     'gain': [args.gain],
                     'decay': [args.decay],
-                    'ki': [0.0]
+                    'ki': [0.0],
+                    'nModes': [n_im_modes]
                 }
 
                 controller = Controller(
@@ -362,11 +367,8 @@ def main():
                 else:
                     predictor = None
 
-                im_tensor = torch.as_tensor(im_handler.interaction_matrix_warehouse[0][0]['IM'], dtype=torch.float64, device=device)
-                cmd_history = [torch.zeros((n_modes, 1), dtype=torch.float64, device=device) for _ in range(max(4, args.delay + 2))]
-
-                mode_name = 'CL Baseline (POL)' if args.predictor == 'none' else f'CL Direct ({args.predictor.upper()})'
-                logger.info(f"Beginning {mode_name} loop ({args.n_iterations} iterations, {vibr_label})")
+                mode_name = 'CL Baseline (SAOS leaky integrator)' if args.predictor == 'none' else f'CL Direct ({args.predictor.upper()})'
+                logger.info(f"Beginning {mode_name} loop ({args.n_iterations} iterations, {vibr_label}) | gain {args.gain}, decay {args.decay}, delay {args.delay}")
                 for i in range(args.n_iterations):
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
@@ -374,19 +376,10 @@ def main():
                     res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 
-                    if args.delay == 0:
-                        cmd_delayed = cmd_history[-1]
-                    else:
-                        cmd_delayed = cmd_history[-args.delay]
-
                     if args.predictor == 'none':
-                        # POL Baseline control (reconstructing open-loop turbulence)
-                        pol_slopes_tensor = res_slopes_tensor - im_tensor @ cmd_delayed
-                        modal_target = (-1.0) * (reconstructor @ pol_slopes_tensor)
-                        modal_error = modal_target - modal_cmd
-                        modal_cmd = args.gain * modal_error + args.decay * modal_cmd
-                        zonal_cmd = modal_basis @ modal_cmd
-                        dms[0].updateDMShape(zonal_cmd)
+                        # Baseline: standard SAOS leaky integrator on the delayed residual slopes
+                        cmd = controller.computeControlAction(scao_light_path_list)
+                        dms[0].updateDMShape(cmd[0])
                     else:
                         predictor.push(res_slopes)
                         if predictor.ready():
@@ -401,8 +394,6 @@ def main():
                             zonal_cmd = modal_basis @ modal_cmd
                             dms[0].updateDMShape(zonal_cmd)
 
-                    cmd_history.pop(0)
-                    cmd_history.append(modal_cmd.clone())
 
                     savepoint.save([atm], i)
                     savepoint.save(dms, i)

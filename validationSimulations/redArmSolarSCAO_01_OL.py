@@ -358,8 +358,9 @@ def main():
                     rmse_lin = float(np.sqrt(mse_lin))
                     rmse_lstm = float(np.sqrt(mse_lstm))
 
-                    impr_lin = float((mse_zoh - mse_lin) / max(mse_zoh, 1e-12) * 100.0)
-                    impr_lstm = float((mse_zoh - mse_lstm) / max(mse_zoh, 1e-12) * 100.0)
+                    # Single improvement metric across the repo: RMSE reduction w.r.t. ZOH
+                    impr_lin = float((rmse_zoh - rmse_lin) / max(rmse_zoh, 1e-12) * 100.0)
+                    impr_lstm = float((rmse_zoh - rmse_lstm) / max(rmse_zoh, 1e-12) * 100.0)
 
                     metrics = {
                         'sensor': f"{args.sensor}x{args.sensor}",
