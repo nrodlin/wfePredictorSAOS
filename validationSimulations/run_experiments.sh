@@ -33,9 +33,9 @@ for SENSOR in "${SENSORS[@]}"; do
 
     # 2a. Closed Loop Baseline Simulation (sin predictor)
     echo ""
-    echo ">>> [2a/6] Running Closed Loop Baseline (delay=2) [${SENSOR}x${SENSOR}]..."
+    echo ">>> [2a/6] Running Closed Loop Baseline (delay=1) [${SENSOR}x${SENSOR}]..."
     t_start=$(date +%s)
-    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor none --n_iterations "$N_ITERATIONS"
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 1 --predictor none --n_iterations "$N_ITERATIONS"
     t_end=$(date +%s)
     echo ">>> [2a/6] Finished CL Baseline [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 
@@ -43,7 +43,7 @@ for SENSOR in "${SENSORS[@]}"; do
     echo ""
     echo ">>> [2b/6] Running Closed Loop Direct Linear [${SENSOR}x${SENSOR}]..."
     t_start=$(date +%s)
-    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor linear --n_iterations "$N_ITERATIONS"
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 1 --predictor linear --n_iterations "$N_ITERATIONS"
     t_end=$(date +%s)
     echo ">>> [2b/6] Finished CL Direct Linear [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 
@@ -51,7 +51,7 @@ for SENSOR in "${SENSORS[@]}"; do
     echo ""
     echo ">>> [2c/6] Running Closed Loop Direct LSTM [${SENSOR}x${SENSOR}]..."
     t_start=$(date +%s)
-    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 2 --predictor lstm --n_iterations "$N_ITERATIONS"
+    $PYTHON_CMD redArmSolarSCAO_02_CL_baseline.py --sensor "$SENSOR" --delay 1 --predictor lstm --n_iterations "$N_ITERATIONS"
     t_end=$(date +%s)
     echo ">>> [2c/6] Finished CL Direct LSTM [${SENSOR}x${SENSOR}] in $((t_end - t_start)) s."
 

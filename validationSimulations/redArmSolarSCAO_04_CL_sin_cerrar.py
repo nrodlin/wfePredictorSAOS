@@ -39,6 +39,7 @@ except ImportError:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Closed-Loop with Open Predictor (CL + Sin Cerrar) Simulation (2kHz)")
+    parser.add_argument('--delay', type=int, default=1, help="LightPath delay in samples; total pure loop delay = delay + 1 (default 1, i.e. 2 samples, the training horizon)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
@@ -297,15 +298,15 @@ def main():
                 scao_light_path_list = []
                 # WFS & Solar Science branch (LP0)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=scicam_solar, delay=2)
+                scao_light_path_list[-1].initialize_path(src=sun, atm=atm, tel=est_tel, dm=dms[0], wfs=shwfs, vibration=vibrations, sci=scicam_solar, delay=args.delay)
 
                 # Science branch 56 Hz (LP1)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_56, delay=2)
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_56, delay=args.delay)
 
                 # Science branch 5 Hz (LP2)
                 scao_light_path_list.append(LightPath(logger))
-                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_5, delay=2)
+                scao_light_path_list[-1].initialize_path(src=ngs, atm=atm, tel=est_tel, dm=dms[0], wfs=None, vibration=vibrations, sci=scicam_5, delay=args.delay)
 
                 lightPathTasks = [delayed(lp.propagate)(True) for lp in scao_light_path_list]
 
@@ -350,8 +351,8 @@ def main():
                     steps_ahead=2
                 )
 
-                # POL reconstruction (LightPath delay = 2): s_pol(i-2) = s_res(i-2) - IM @ (modal shape applied by the DM at i-2)
-                pol = PseudoOpenLoop(im_handler.interaction_matrix_warehouse[0][0]['IM'], dms[0], 2, n_modes, device=device)
+                # POL reconstruction: s_pol(i-d) = s_res(i-d) - IM @ (modal shape applied by the DM at i-d)
+                pol = PseudoOpenLoop(im_handler.interaction_matrix_warehouse[0][0]['IM'], dms[0], args.delay, n_modes, device=device)
 
                 slopes_res_list = []
                 slopes_pol_list = []
@@ -445,7 +446,7 @@ def main():
                     }
 
                     logger.info(f"Results for CL Sin Cerrar {atm_name} {draw_name} ({vibr_label}):")
-                    logger.info(f"  POL ZOH (delay=2) RMSE: {rmse_zoh:.5f} px")
+                    logger.info(f"  POL ZOH (2-sample horizon) RMSE: {rmse_zoh:.5f} px")
                     logger.info(f"  POL Linear Pred   RMSE: {rmse_lin:.5f} px (Improvement: {impr_lin:+.2f}%)")
                     logger.info(f"  POL LSTM Pred     RMSE: {rmse_lstm:.5f} px (Improvement: {impr_lstm:+.2f}%)")
 

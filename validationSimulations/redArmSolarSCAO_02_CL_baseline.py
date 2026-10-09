@@ -40,7 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Closed-Loop Baseline & Direct Prediction Simulation (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
     parser.add_argument('--predictor', type=str, default='none', choices=['none', 'linear', 'lstm'], help="Predictor type for direct CL (none, linear, or lstm)")
-    parser.add_argument('--delay', type=int, default=2, help="Loop delay samples (default 2)")
+    parser.add_argument('--delay', type=int, default=1, help="LightPath delay in samples; total pure loop delay = delay + 1 (default 1, i.e. 2 samples, the training horizon)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
     parser.add_argument('--gain', type=float, default=0.25, help="Loop gain (default 0.25)")
@@ -125,9 +125,9 @@ def main():
     # The gain is always part of the name: the baseline changed from a hand-made POL to the SAOS leaky integrator
     suffix = f"_gain{args.gain}" + (f"_decay{args.decay}" if args.decay != 0.999 else "")
     if args.predictor == 'none':
-        res_dir = os.path.join(base_dir, 'results', f'cl_baseline{suffix}')
+        res_dir = os.path.join(base_dir, 'results', f'cl_baseline_{args.delay}delay{suffix}')
     else:
-        res_dir = os.path.join(base_dir, 'results', f'cl_direct_{args.predictor}{suffix}')
+        res_dir = os.path.join(base_dir, 'results', f'cl_direct_{args.predictor}_{args.delay}delay{suffix}')
     os.makedirs(ps_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
 
@@ -216,7 +216,7 @@ def main():
                 if args.predictor == 'none':
                     res_file_name = f"res_cl_baseline_{args.delay}delay{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 else:
-                    res_file_name = f"res_cl_direct_{args.predictor}{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
+                    res_file_name = f"res_cl_direct_{args.predictor}_{args.delay}delay{suffix}_{args.sensor}x{args.sensor}_{vibr_label}_{atm_name}_{draw_name}.h5"
                 res_file_path = os.path.join(res_dir, res_file_name)
 
                 if args.skip_existing and os.path.exists(res_file_path):
@@ -362,7 +362,7 @@ def main():
                     predictor = OnlineLinearSlopePredictor(
                         n_slopes=shwfs.nSignal,
                         past_horizon=4,
-                        steps_ahead=args.delay
+                        steps_ahead=args.delay + 1  # total pure loop delay in SAOS
                     )
                 else:
                     predictor = None

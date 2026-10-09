@@ -328,7 +328,7 @@ def main():
                     current_slopes = scao_light_path_list[0].slopes_1D.copy()
                     all_slopes_history.append(current_slopes)
 
-                    # With a 2-sample delay, at time step i the latest available measurement is from step i-2
+                    # Total pure loop delay of 2 samples (closed-loop scripts with LightPath delay=1): at step i the latest measurement is from i-2
                     if i >= 2:
                         delayed_slopes = all_slopes_history[i - 2]
                         predictor_lstm.push(delayed_slopes)
@@ -379,7 +379,7 @@ def main():
                     }
 
                     logger.info(f"Results for {atm_name} {draw_name} ({vibr_label}):")
-                    logger.info(f"  ZOH (delay=2) RMSE: {rmse_zoh:.5f} px")
+                    logger.info(f"  ZOH (2-sample total delay) RMSE: {rmse_zoh:.5f} px")
                     logger.info(f"  Linear Pred   RMSE: {rmse_lin:.5f} px (Improvement: {impr_lin:+.2f}%)")
                     logger.info(f"  LSTM Pred     RMSE: {rmse_lstm:.5f} px (Improvement: {impr_lstm:+.2f}%)")
 

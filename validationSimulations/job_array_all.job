@@ -32,9 +32,9 @@ case $TASK_ID in
         python -u redArmSolarSCAO_01_OL.py --sensor 50 --base_dir "$BASE_DIR" --skip_existing
         ;;
     2)
-        echo ">>> Case 2: CL Baseline (Delay=2, Sin Predictor)"
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
-        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 2 --predictor none --base_dir "$BASE_DIR" --skip_existing
+        echo ">>> Case 2: CL Baseline (Delay=1, Sin Predictor)"
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 36 --delay 1 --predictor none --base_dir "$BASE_DIR" --skip_existing
+        python -u redArmSolarSCAO_02_CL_baseline.py --sensor 50 --delay 1 --predictor none --base_dir "$BASE_DIR" --skip_existing
         ;;
     3)
         echo ">>> Case 3: CL POL Linear"

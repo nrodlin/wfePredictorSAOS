@@ -5,7 +5,7 @@ Master Campaign Runner for AO Predictor Simulations (Durum / Local)
 - Iterates over all requested sensors, atmospheric cases, draws, and vibrations
 - Runs:
     1. Open Loop (OL)
-    2. Closed Loop Baseline (SAOS leaky integrator, delay=2)
+    2. Closed Loop Baseline (SAOS leaky integrator, LightPath delay=1 -> 2 samples total)
     3. Closed Loop POL (Linear Predictor, POL gain 1.0)
     4. Closed Loop POL (LSTM Predictor, POL gain 1.0)
     5. Closed Loop Sin Cerrar (Parallel Open Predictor Monitoring)
@@ -120,9 +120,9 @@ def main():
         ol_script = os.path.join(script_dir, 'redArmSolarSCAO_01_OL.py')
         run_step([python_exec, ol_script] + sensor_flags, logger, f"1. OL Validation [{sensor}x{sensor}]")
 
-        # 2. Closed Loop Baseline (integrador leaky de SAOS, delay=2, sin predictor)
+        # 2. Closed Loop Baseline (integrador leaky de SAOS, delay=1 -> retardo total de 2 muestras, sin predictor)
         cl_script = os.path.join(script_dir, 'redArmSolarSCAO_02_CL_baseline.py')
-        run_step([python_exec, cl_script, '--delay', '2', '--predictor', 'none'] + sensor_flags, logger, f"2. CL Baseline (delay=2) [{sensor}x{sensor}]")
+        run_step([python_exec, cl_script, '--delay', '1', '--predictor', 'none'] + sensor_flags, logger, f"2. CL Baseline (delay=1) [{sensor}x{sensor}]")
 
         # 3. Closed Loop POL (Linear Predictor con reconstrucción POL)
         pol_script = os.path.join(script_dir, 'redArmSolarSCAO_03_CL_POL.py')

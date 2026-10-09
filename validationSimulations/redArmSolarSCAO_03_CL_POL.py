@@ -40,14 +40,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Closed-Loop POL (Pseudo-Open-Loop) Simulation with Predictor (2kHz)")
     parser.add_argument('--sensor', type=int, default=36, choices=[36, 50], help="Sensor grid size (36 for 36x36, 50 for 50x50)")
     parser.add_argument('--predictor', type=str, default='lstm', choices=['lstm', 'linear', 'none'], help="Predictor type (lstm, linear, or none for POL baseline)")
-    parser.add_argument('--delay', type=int, default=2, help="Loop delay in samples (default 2)")
+    parser.add_argument('--delay', type=int, default=1, help="LightPath delay in samples; total pure loop delay = delay + 1 (default 1, i.e. 2 samples, the training horizon)")
     parser.add_argument('--n_iterations', type=int, default=2500, help="Number of iterations (default 2500 for 1.25s at 2kHz)")
     parser.add_argument('--sampling_freq', type=float, default=2000.0, help="Sampling frequency in Hz (default 2000)")
     parser.add_argument('--gain', type=float, default=None, help="Gain applied to the (predicted) POL target: c = gain*(target - c) + decay*c. "
                         "Default: 0.25 without predictor, 1.0 with predictor (applies the prediction directly, a lower gain low-pass filters it adding (1-g)/g samples of lag)")
     parser.add_argument('--warmup_gain', type=float, default=0.25, help="Integrator gain on the residual slopes while the predictor buffer fills (default 0.25)")
     parser.add_argument('--horizon', type=int, default=2, help="Prediction horizon [samples] of the linear predictor (default 2, as the LSTM training). "
-                        "The command computed at i acts at i+2..i+3 with the ASM dynamics, so the full lag from s(i-d) is ~delay+2.4")
+                        "The total pure loop delay is delay+1 (2 by default); the ASM dynamics add ~1.4 samples more")
     parser.add_argument('--decay', type=float, default=0.999, help="Leaky decay factor (default 0.999)")
     parser.add_argument('--beta', type=float, default=5e-4, help="Tikhonov regularization beta (default 5e-4)")
     parser.add_argument('--atm', type=str, default=None, help="Atmosphere case to run (e.g. atm1). Default: all")
@@ -131,7 +131,8 @@ def main():
     if args.gain is None:
         args.gain = 0.25 if args.predictor == 'none' else 1.0
 
-    delay_str = f"_{args.delay}delay" if args.delay != 2 else ""
+    # The delay is always part of the name (the default changed from 2 to 1)
+    delay_str = f"_{args.delay}delay"
     if args.tag:
         suffix = f"_{args.tag}"
     else:
@@ -390,7 +391,7 @@ def main():
                     atm.update()
                     Parallel(n_jobs=1, prefer="threads")(lightPathTasks)
 
-                    # Residual slopes measured with loop delay (delay=2)
+                    # Residual slopes measured `delay` iterations ago
                     res_slopes = scao_light_path_list[0].get_wavefront_error()
                     res_slopes_tensor = torch.as_tensor(res_slopes, dtype=torch.float64, device=device).unsqueeze(1)
 

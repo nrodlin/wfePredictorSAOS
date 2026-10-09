@@ -173,7 +173,7 @@ def main():
     ol_res = analyze_open_loop(base_dir, args.sensor)
     if ol_res:
         print("\n" + "#" * 140)
-        print(" [1] OPEN LOOP (OL) PREDICTION ERRORS (Slope RMSE in px & % RMSE reduction vs ZOH delay=2)")
+        print(" [1] OPEN LOOP (OL) PREDICTION ERRORS (Slope RMSE in px & % RMSE reduction vs ZOH, 2-sample total delay)")
         print("#" * 140)
         print(f"{'Sensor':<8} | {'Atm':<6} {'Draw':<6} {'Vibr':<8} | {'ZOH RMSE':<12} | {'Linear RMSE':<14} {'(Impr %)':<10} | {'LSTM RMSE':<14} {'(Impr %)':<10}")
         print("-" * 140)
