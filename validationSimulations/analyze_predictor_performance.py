@@ -237,7 +237,7 @@ class PredictorPerformanceAnalyzer:
             if len(candidates) == 0:
                 self.logger.warning("No baseline folder found (cl_baseline*), relative gains will not be computed")
             else:
-                preferred = [c for c in ['cl_baseline', 'cl_baseline_gain0.25'] if c in candidates]
+                preferred = [c for c in ['cl_baseline_1delay_gain0.25', 'cl_baseline', 'cl_baseline_gain0.25'] if c in candidates]
                 self.baseline = preferred[0] if preferred else candidates[0]
                 if len(candidates) > 1:
                     self.logger.warning(f"Several baselines found {candidates}, using {self.baseline} (use --baseline to choose)")
@@ -289,6 +289,12 @@ class PredictorPerformanceAnalyzer:
                         last_it = self._last_iteration(hf)
                         if last_it < self.n_iterations - 1:
                             self._exclude(fp, f"incomplete run (last iteration {last_it + 1} of {self.n_iterations})")
+                            continue
+
+                        # A diverged loop ends with NaN in the residual OPD: report it as excluded instead of silent NaN metrics
+                        if 'LightPath_1/sci_opd/std' in hf and np.isnan(hf['LightPath_1/sci_opd/std'][:]).any():
+                            first_nan = int(np.argmax(np.isnan(hf['LightPath_1/sci_opd/std'][:].ravel())))
+                            self._exclude(fp, f"loop diverged (NaN residual from iteration {first_nan})")
                             continue
 
                         row = {'config': cfg, **case}
