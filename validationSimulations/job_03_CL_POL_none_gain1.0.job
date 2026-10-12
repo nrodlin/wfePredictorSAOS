@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=17:00:00
+#SBATCH --job-name=saos_03_POL_none_g10
+#SBATCH --output=saos_03_POL_none_g10_%j.out
+#SBATCH --error=saos_03_POL_none_g10_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+# Control run: CL POL without predictor (gain 1.0): isolates the effect of the predictor in cl_pol_*_gain1.0
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+echo "=== Starting CL POL without predictor (gain 1.0): isolates the effect of the predictor in cl_pol_*_gain1.0 ==="
+python -u prepare_assets.py --base_dir "$BASE_DIR"
+
+python -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor none --gain 1.0 --decay 0.999 --base_dir "$BASE_DIR" --skip_existing
+python -u redArmSolarSCAO_03_CL_POL.py --sensor 50 --predictor none --gain 1.0 --decay 0.999 --base_dir "$BASE_DIR" --skip_existing
+
+echo "=== CL POL without predictor (gain 1.0): isolates the effect of the predictor in cl_pol_*_gain1.0 Completed ==="
