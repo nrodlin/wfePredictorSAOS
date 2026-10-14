@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --time=02:30:00
+#SBATCH --job-name=saos_03_POL_none_g10_ctrl
+#SBATCH --output=saos_03_POL_none_g10_ctrl_%j.out
+#SBATCH --error=saos_03_POL_none_g10_ctrl_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+# Reduced control run: CL POL without predictor (gain 1.0), 36x36, no vibrations, draw 1, atm1/atm3/atm5 (~29 min each).
+# Paired with cl_pol_lstm_1delay_gain1.0 and cl_pol_linear_1delay_gain1.0 (same phase screens in BASE_DIR): isolates the effect of the
+# predictor from the POL control law. Results in $BASE_DIR/results/cl_pol_none_1delay_gain1.0.
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+export PYTHONPATH=/home/nlinares/code/SAOS:$PYTHONPATH
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
+[ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
+
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+echo "=== Control run: CL POL without predictor (gain 1.0), 36x36 noVibr draw1, atm1 atm3 atm5 | $(hostname) $(date) ==="
+for ATM in atm1 atm3 atm5; do
+    # The phase screens of the LSTM runs must exist: otherwise 03 would generate new ones and the comparison would not be paired
+    [ -f "$BASE_DIR/phase_screens/ps_dualARM_EST_case${ATM#atm}_draw1.h5" ] || { echo "Missing phase screen for $ATM in $BASE_DIR"; exit 1; }
+    $PYTHON_CMD -u redArmSolarSCAO_03_CL_POL.py --sensor 36 --predictor none --gain 1.0 --decay 0.999 \
+        --atm $ATM --draw draw1 --no_vibr_only --base_dir "$BASE_DIR" --skip_existing
+done
+echo "=== Control run completed $(date) ==="
