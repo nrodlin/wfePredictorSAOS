@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --array=36,50
+#SBATCH --time=24:00:00
+#SBATCH --job-name=saos_06_polpred
+#SBATCH --output=saos_06_polpred_%a_%A.out
+#SBATCH --error=saos_06_polpred_%a_%A.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+# POL reconstruction error and prediction errors (ZOH, linear, LSTM) under the same atmosphere: 3 light paths sharing the same WFS
+# (OL with delay 1, CL with POL g 0.4 and delay 1, OL without delay). One array task per sensor (36x36, 50x50), every validation
+# atmosphere (5 r0 x 3 draws) with and without vibrations: 30 runs per sensor, ~17 min each for 36x36 (measured locally).
+# Results in $BASE_DIR/results/pol_prediction_errors. Resubmitting continues where it was (--skip_existing).
+
+cd ~/code/wfePredictorSAOS/validationSimulations
+export PYTHONPATH=/home/nlinares/code/SAOS:$PYTHONPATH
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
+[ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
+SENSOR=${SLURM_ARRAY_TASK_ID:?This script is a Slurm array job, submit it with sbatch}
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+
+echo "=== POL and prediction errors, ${SENSOR}x${SENSOR} | $(hostname) $(date) ==="
+$PYTHON_CMD -u prepare_assets.py --base_dir "$BASE_DIR"
+$PYTHON_CMD -u redArmSolarSCAO_06_POL_prediction_errors.py --sensor $SENSOR --gain 0.4 --base_dir "$BASE_DIR" --skip_existing
+echo "=== Completed $(date) ==="
