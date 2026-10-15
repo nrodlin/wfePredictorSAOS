@@ -7,11 +7,11 @@ The prediction is built on the last sample, so the gain at zero frequency is exa
 (being linear, any per-window normalisation cancels out in the prediction). The normalisation by the window rms of the increments is
 used in the fit: every window weighs the same in the least squares, independently of the amplitude (r0, geometry, plate scale).
 
-Fit (CLI) on the open-loop training data of the LSTM (atm1-4). With --lowpass the cost is the low-pass filtered prediction error
+Fit (CLI) on the v2 dataset (POL slopes as input, open-loop slopes as target; also reads the v1 open-loop files). With --lowpass the cost is the low-pass filtered prediction error
 (zero-phase Butterworth): the predictor optimises only the band that the loop can correct instead of the high-frequency staircase of
 the atmosphere. The predictor is a linear time-invariant filter, so the filtered error equals the error of the same predictor applied
 to the filtered slopes: the fit is done on the filtered slopes (features and target), and the weights are then used on raw slopes.
-    python incrementARPredictor.py --p 16 --horizons 2 3 [--lowpass 100]
+    python incrementARPredictor.py --p 16 --horizons 1 2 3 4 [--lowpass 100 --hf_weight 0.1]
 """
 import os
 import glob
@@ -54,12 +54,27 @@ def lowpass_zero_phase(S, fc, fs=2000.0, order=4):
     return sosfiltfilt(sos, S, axis=0)
 
 
+def load_input_target(path):
+    """
+    (input, target) slope series (T, N) of a data file, aligned by atmosphere instant:
+      v2 dataset (generateTrainingData.py): input = POL slopes of the closed loop, target = open-loop slopes of the parallel WFS
+      v1 training data (SAOS Savepoint, open loop): input = target = open-loop slopes
+    """
+    with h5py.File(path, 'r') as h:
+        if 'slopes/pol' in h:
+            S_in, S_tgt = h['slopes/pol'][:].astype(np.float64), h['slopes/ol'][:].astype(np.float64)
+            ok = np.isfinite(S_in).all(axis=1) & np.isfinite(S_tgt).all(axis=1)
+            return S_in[ok], S_tgt[ok]
+        S = h['LightPath_0/slopes_1D/data'][:].squeeze().astype(np.float64)
+        return S, S
+
+
 def fit_increment_ar(files, p=16, horizons=(2, 3), sigma_window=24, sigma_floor_frac=0.1, lowpass=None, hf_weight=0.0, fs=2000.0):
     """
-    Weighted least squares on all the slopes and frames of the files: target (s(t+h) - s(t)) / sigma, features ds(t-j) / sigma, with
-    sigma the rms of the raw increments of the last sigma_window frames of that slope (floor: sigma_floor_frac times the median of the file).
-    With lowpass [Hz] the cost is |LP(e)|^2 + hf_weight*|e|^2, with e the prediction error and LP a zero-phase low-pass filter: the
-    first term is computed on the filtered slopes (features and target), the second on the raw slopes, both with the raw sigma.
+    Weighted least squares on all the slopes and frames of the files: target (s_tgt(t+h) - s_in(t)) / sigma, features ds_in(t-j) / sigma,
+    with sigma the rms of the raw input increments of the last sigma_window frames of that slope (floor: sigma_floor_frac times the median
+    of the file). With lowpass [Hz] the cost is |LP(e)|^2 + hf_weight*|e|^2, with e the prediction error and LP a zero-phase low-pass
+    filter: the first term is computed on the filtered series (features and target), the second on the raw ones, both with the raw sigma.
     hf_weight bounds the high-frequency gain of the predictor (with 0 it is unconstrained above the cut-off).
     """
     hmax = max(horizons)
@@ -67,40 +82,43 @@ def fit_increment_ar(files, p=16, horizons=(2, 3), sigma_window=24, sigma_floor_
     B = np.zeros((len(horizons), p))
     n_rows = 0
     for f in files:
-        with h5py.File(f, 'r') as h:
-            S_raw = h['LightPath_0/slopes_1D/data'][:].squeeze().astype(np.float64)   # (T, N)
-        dS_raw = np.diff(S_raw, axis=0, prepend=S_raw[:1])                             # dS[t] = s(t) - s(t-1)
-        # Window rms of the raw increments ending at t
-        c = np.cumsum(np.vstack([np.zeros((1, S_raw.shape[1])), dS_raw ** 2]), axis=0)
-        t = np.arange(max(p, sigma_window), S_raw.shape[0] - hmax)
+        S_in, S_tgt = load_input_target(f)
+        dS_raw = np.diff(S_in, axis=0, prepend=S_in[:1])                               # dS[t] = s(t) - s(t-1)
+        # Window rms of the raw input increments ending at t
+        c = np.cumsum(np.vstack([np.zeros((1, S_in.shape[1])), dS_raw ** 2]), axis=0)
+        t = np.arange(max(p, sigma_window), S_in.shape[0] - hmax)
         sig = np.sqrt((c[t + 1] - c[t + 1 - sigma_window]) / sigma_window)
         sig = np.maximum(sig, sigma_floor_frac * np.median(sig))
-        terms = [(S_raw, 1.0)] if lowpass is None else [(lowpass_zero_phase(S_raw, lowpass, fs), 1.0)] + ([(S_raw, hf_weight)] if hf_weight > 0 else [])
-        for S, wt in terms:
-            dS = np.diff(S, axis=0, prepend=S[:1])
+        terms = [(S_in, S_tgt, 1.0)]
+        if lowpass is not None:
+            terms = [(lowpass_zero_phase(S_in, lowpass, fs), lowpass_zero_phase(S_tgt, lowpass, fs), 1.0)] + ([(S_in, S_tgt, hf_weight)] if hf_weight > 0 else [])
+        for Si, St, wt in terms:
+            dS = np.diff(Si, axis=0, prepend=Si[:1])
             X = (np.stack([dS[t - j] for j in range(p)], axis=-1) / sig[..., None]).reshape(-1, p)
             A += wt * (X.T @ X)
             for ih, hh in enumerate(horizons):
-                B[ih] += wt * (X.T @ ((S[t + hh] - S[t]) / sig).reshape(-1))
-        n_rows += t.size * S_raw.shape[1]
+                B[ih] += wt * (X.T @ ((St[t + hh] - Si[t]) / sig).reshape(-1))
+        n_rows += t.size * S_in.shape[1]
     return np.stack([np.linalg.solve(A + 1e-9 * np.trace(A) / p * np.eye(p), B[ih]) for ih in range(len(horizons))]), n_rows
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Fit the increment AR predictor on the open-loop training data of the LSTM (atm1-4)')
-    parser.add_argument('--data_dir', default='/home/nlinares/simulations/results/predictorSAOS/training/training_val')
-    parser.add_argument('--atms', type=int, nargs='+', default=[1, 2, 3, 4])
+    parser = argparse.ArgumentParser(description='Fit the increment AR predictor (v2 dataset: POL input, open-loop target)')
+    parser.add_argument('--files', default=os.path.join(os.path.expanduser('~'), 'simulations', 'results', 'predictor_dataset_v2', 'train', '*.h5'),
+                        help='Glob of the data files (default: train split of the v2 dataset)')
     parser.add_argument('--p', type=int, default=16)
-    parser.add_argument('--horizons', type=int, nargs='+', default=[2, 3])
+    parser.add_argument('--horizons', type=int, nargs='+', default=[1, 2, 3, 4])
     parser.add_argument('--lowpass', type=float, default=None, help='Cut-off [Hz] of the low-pass weighting of the prediction error (default: none)')
     parser.add_argument('--hf_weight', type=float, default=0.0, help='Weight of the raw (unfiltered) prediction error with --lowpass (default 0)')
     parser.add_argument('--out', default=None)
     args = parser.parse_args()
-    files = sorted(f for a in args.atms for f in glob.glob(os.path.join(args.data_dir, f'res_atm{a}_*.h5')))
+    files = sorted(glob.glob(args.files))
+    if not files:
+        raise SystemExit(f'No files match {args.files}')
     print(f'Fitting p={args.p}, horizons {args.horizons}, low-pass {args.lowpass}, hf weight {args.hf_weight} on {len(files)} files')
     W, n = fit_increment_ar(files, p=args.p, horizons=args.horizons, lowpass=args.lowpass, hf_weight=args.hf_weight)
     tag = f'incAR_p{args.p}' + (f'_lp{args.lowpass:g}' if args.lowpass else '') + (f'_hf{args.hf_weight:g}' if args.lowpass and args.hf_weight else '')
-    out = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), f'{tag}.npz')
+    out = args.out or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'weights', f'{tag}.npz')
     np.savez(out, p=args.p, horizons=np.array(args.horizons), W=W, lowpass=args.lowpass or 0, hf_weight=args.hf_weight, files=np.array([os.path.basename(f) for f in files]))
     for hh, w in zip(args.horizons, W):
         print(f'  h={hh}: w = {np.round(w, 3)}')

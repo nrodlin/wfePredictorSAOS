@@ -25,7 +25,7 @@ class OnlineSlopePredictor:
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
         if model_path is None:
-            model_path = os.path.join(os.path.dirname(__file__), 'best_model_IndepLSTM.pt')
+            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'weights', 'lstm_v1_IndepLSTM.pt')
 
         self.model = IndependentSlopeLSTM(n_axis=n_axis, hidden_size=hidden_size, num_layers=num_layers).to(self.device)
         state_dict = torch.load(model_path, map_location=self.device)

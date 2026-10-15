@@ -50,7 +50,7 @@ class StencilPredictor:
         lam : float
             Forgetting factor of the RLS (memory ~ 1/(1-lam) frames).
         weights_file : str, optional
-            npz with the global weights (default: stencil_global_K{K}_p{p}.npz next to this file). Used for mode='global' or init='global'.
+            npz with the global weights (default: weights/stencil_global_K{K}_p{p}.npz). Used for mode='global' or init='global'.
         weights : np.ndarray (p*2K^2, 2), optional
             Global weights given directly for `horizon` (instead of weights_file).
         init : str
@@ -75,7 +75,7 @@ class StencilPredictor:
             self.w0 = torch.as_tensor(weights, dtype=torch.float64, device=self.device)
         elif mode == 'global' or init == 'global':
             if weights_file is None:
-                weights_file = os.path.join(os.path.dirname(__file__), f'stencil_global_K{self.K}_p{self.p}.npz')
+                weights_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'weights', f'stencil_global_K{self.K}_p{self.p}.npz')
             w = np.load(weights_file)
             if int(w['K']) != self.K or int(w['p']) != self.p:
                 raise ValueError(f'StencilPredictor::__init__ - {weights_file} has K={int(w["K"])}, p={int(w["p"])}.')
@@ -189,6 +189,6 @@ if __name__ == '__main__':
     files = sorted(f for a in args.atms for f in glob.glob(os.path.join(args.data_dir, f'res_atm{a}_*.h5')))
     print(f'Fitting K={args.K}, p={args.p}, horizons {args.horizons} on {len(files)} files')
     W = fit_global_stencil(files, K=args.K, past_horizon=args.p, horizons=args.horizons)
-    out = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), f'stencil_global_K{args.K}_p{args.p}.npz')
+    out = args.out or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'weights', f'stencil_global_K{args.K}_p{args.p}.npz')
     np.savez(out, K=args.K, p=args.p, horizons=np.array(args.horizons), W=W, files=np.array([os.path.basename(f) for f in files]))
     print(f'Saved {out}')

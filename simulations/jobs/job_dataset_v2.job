@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --array=0-47
+#SBATCH --time=01:30:00
+#SBATCH --job-name=pred_v2_dataset
+#SBATCH --output=pred_v2_dataset_%A_%a.out
+#SBATCH --error=pred_v2_dataset_%A_%a.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+# Dataset v2 of the predictor (generateTrainingData.py): one run per array task, 2000 iterations, random conditions drawn from the seed.
+# ~10 min per 36x36 run, ~30 min per 50x50 run (measured locally). Results in $BASE_DIR/results/predictor_dataset_v2/<split>/.
+#   sbatch job_dataset_v2.job                                              train, 36x36, 48 runs
+#   sbatch --array=0-7 --export=ALL,SPLIT=val job_dataset_v2.job           validation, 36x36
+#   sbatch --array=0-7 --export=ALL,SPLIT=test job_dataset_v2.job          test, 36x36
+#   sbatch --array=0-7 --export=ALL,SPLIT=test,SENSOR=50 job_dataset_v2.job    test, 50x50 (geometry never seen in training)
+
+cd ~/code/wfePredictorSAOS/simulations
+export PYTHONPATH=/home/nlinares/code/SAOS:/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
+[ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
+BASE_DIR="/net/durum/scratch/$USER/simulations"
+SPLIT=${SPLIT:-train}
+SENSOR=${SENSOR:-36}
+INDEX=${SLURM_ARRAY_TASK_ID:?This script is a Slurm array job, submit it with sbatch}
+
+echo "=== Dataset v2: $SPLIT ${SENSOR}x${SENSOR} run $INDEX | $(hostname) $(date) ==="
+$PYTHON_CMD -u generateTrainingData.py --split $SPLIT --sensor $SENSOR --index $INDEX --base_dir "$BASE_DIR" --skip_existing
+echo "=== Completed $(date) ==="

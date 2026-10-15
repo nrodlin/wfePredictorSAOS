@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=12:00:00
+#SBATCH --job-name=pred_v2_train
+#SBATCH --output=pred_v2_train_%j.out
+#SBATCH --error=pred_v2_train_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=nicolas.linares@iac.es
+
+# Training of the predictors v2 on the dataset v2 (train/val splits of 36x36):
+#   lstm_v2      incremental LSTM, band loss (|LP100(e)|^2 + 0.1|e|^2)
+#   lstm_v2_mse  incremental LSTM, plain MSE (comparison)
+#   incAR_p16_lp100_hf0.1 / incAR_p16  increment AR baselines with the same two costs
+# The weights are written to ~/code/wfePredictorSAOS/wfePredictorSAOS/weights (copy them back to the local repo).
+
+cd ~/code/wfePredictorSAOS/wfePredictorSAOS
+export PYTHONPATH=/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
+[ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
+DATA_DIR="/net/durum/scratch/$USER/simulations/results/predictor_dataset_v2"
+
+echo "=== Training v2 | $(hostname) $(date) ==="
+$PYTHON_CMD -u predictor/incrementARPredictor.py --files "$DATA_DIR/train/run_36x36_train_*.h5" --p 16 --horizons 1 2 3 4
+$PYTHON_CMD -u predictor/incrementARPredictor.py --files "$DATA_DIR/train/run_36x36_train_*.h5" --p 16 --horizons 1 2 3 4 --lowpass 100 --hf_weight 0.1
+$PYTHON_CMD -u training/trainIncrementalLSTM.py --data_dir "$DATA_DIR" --loss band --lowpass 100 --hf_weight 0.1
+$PYTHON_CMD -u training/trainIncrementalLSTM.py --data_dir "$DATA_DIR" --loss mse --tag mse
+echo "=== Completed $(date) ==="
