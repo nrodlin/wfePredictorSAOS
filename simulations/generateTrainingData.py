@@ -14,7 +14,7 @@ Every run draws its own conditions with the seed seed_base(split) + index:
 Splits: train / val / test (different seed bases). The 36x36 runs are used for training and validation; the 50x50 test runs check the
 transfer to another geometry (never used in training).
 
-Output: <base_dir>/results/predictor_dataset_v2/<split>/run_<sensor>x<sensor>_<split>_<index>.h5
+Output: <base_dir>/results/wfePredictor/<campaign>/dataset/<split>/run_<sensor>x<sensor>_<split>_<index>.h5
 
 Usage:
   python generateTrainingData.py --split train --index 0
@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from SAOS.LoggingHelper import LoggingHelper
 from SAOS.LightPath import LightPath
 
-from common import get_base_dir, get_asset_dirs, make_telescope, build_optics, load_atmosphere, PolControl
+from common import get_base_dir, get_asset_dirs, make_telescope, build_optics, load_atmosphere, PolControl, results_root
 
 SEED_BASE = {'train': 10000, 'val': 20000, 'test': 30000}
 ALTITUDES = [100, 1500, 5000, 10000, 15000]
@@ -74,7 +74,7 @@ def parse_args():
 def run(args, index, base_dir, logger):
     sensor, d = args.sensor, args.delay
     seed = SEED_BASE[args.split] + 1000 * (sensor == 50) + index
-    out_dir = os.path.join(base_dir, 'results', 'predictor_dataset_v2' + ('_test' if args.test else ''), args.split)
+    out_dir = os.path.join(results_root(base_dir), 'dataset' + ('_test' if args.test else ''), args.split)
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, f'run_{sensor}x{sensor}_{args.split}_{index:03d}.h5')
     if args.skip_existing and os.path.exists(out):

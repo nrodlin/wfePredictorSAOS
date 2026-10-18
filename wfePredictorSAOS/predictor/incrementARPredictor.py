@@ -104,7 +104,7 @@ def fit_increment_ar(files, p=16, horizons=(2, 3), sigma_window=24, sigma_floor_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Fit the increment AR predictor (v2 dataset: POL input, open-loop target)')
-    parser.add_argument('--files', default=os.path.join(os.path.expanduser('~'), 'simulations', 'results', 'predictor_dataset_v2', 'train', '*.h5'),
+    parser.add_argument('--files', default=os.path.join(os.path.expanduser('~'), 'simulations', 'results', 'wfePredictor', 'v2', 'dataset', 'train', '*.h5'),
                         help='Glob of the data files (default: train split of the v2 dataset)')
     parser.add_argument('--p', type=int, default=16)
     parser.add_argument('--horizons', type=int, nargs='+', default=[1, 2, 3, 4])

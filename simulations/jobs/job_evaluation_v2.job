@@ -13,7 +13,7 @@
 # Evaluation of the predictors v2, one array task per sensor:
 #   polPredictionErrors.py   3 light paths (POL error and prediction errors), profile 1 of mcaobenchcodes, 2000 iterations, POL g 0.4
 #   closedLoopComparison.py  paired closed loop (integrator, POL with ZOH / linear / LSTM v1 / LSTM v2 / AR), atm1 draw1, 500 iterations
-# Horizon 2 (pure delay of the loop). Results in $BASE_DIR/results/pol_prediction_errors_v2 and results/closedLoopComparison.
+# Horizon 2 (pure delay of the loop). Results in $BASE_DIR/results/wfePredictor/v2/pol_prediction_errors and results/wfePredictor/v2/closedLoopComparison.
 
 cd ~/code/wfePredictorSAOS/simulations
 export PYTHONPATH=/home/nlinares/code/SAOS:/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
@@ -25,7 +25,7 @@ PREDICTORS="zoh linear lstm_v1 lstm_v2 lstm_v2:mse incAR:incAR_p16 incAR:incAR_p
 
 echo "=== Evaluation v2, ${SENSOR}x${SENSOR} | $(hostname) $(date) ==="
 $PYTHON_CMD -u prepare_assets.py --base_dir "$BASE_DIR"
-$PYTHON_CMD -u polPredictionErrors.py --mcao_profile1 --sensor $SENSOR --n_iterations 2000 --gain 0.4 --predictors $PREDICTORS --results_subdir pol_prediction_errors_v2 --base_dir "$BASE_DIR" --skip_existing
+$PYTHON_CMD -u polPredictionErrors.py --mcao_profile1 --sensor $SENSOR --n_iterations 2000 --gain 0.4 --predictors $PREDICTORS --results_subdir wfePredictor/v2/pol_prediction_errors --base_dir "$BASE_DIR" --skip_existing
 CASES="integrator $(for p in $PREDICTORS; do printf 'pol:%s ' $p; done)"
 INT_GAIN=$([ "$SENSOR" = 50 ] && echo 0.4 || echo 0.25)     # best integrator gain of each sensor in the first campaign
 $PYTHON_CMD -u closedLoopComparison.py --sensor $SENSOR --int_gain $INT_GAIN --cases $CASES --base_dir "$BASE_DIR" --skip_existing

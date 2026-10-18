@@ -1,5 +1,5 @@
 """
-Common configuration of the simulations of the predictor (EST red arm SCAO at 2 kHz, Correlating SH on the sun):
+Common configuration of the simulations of the predictor (EST red arm SCAO at 2 kHz by default, Correlating SH on the sun):
 directories, telescope, optics (36x36 ASM / 50x50 M7), atmospheres, control (IM, Tikhonov reconstructor, POL replica) and the
 factory of the online predictors used by polPredictionErrors.py and closedLoopComparison.py.
 """
@@ -20,6 +20,23 @@ from wfePredictorSAOS.predictor.pseudoOpenLoop import PseudoOpenLoop
 
 WEIGHTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'wfePredictorSAOS', 'weights')
 FS = 2000.0
+
+# Campaign: results under <base_dir>/results/wfePredictor/<CAMPAIGN>, and the IMs and weights of a campaign other than v2 carry its
+# name (v2: WFS with fully illuminated subapertures only; v3: SAOS WFS with partially illuminated subapertures, develop 3534fa7)
+CAMPAIGN = os.environ.get('WFEPRED_CAMPAIGN', 'v2')
+ASSET_TAG = '' if CAMPAIGN == 'v2' else f'_{CAMPAIGN}'
+
+
+def results_root(base_dir):
+    return os.path.join(base_dir, 'results', 'wfePredictor', CAMPAIGN)
+
+
+def im_file(base_dir, sensor):
+    return os.path.join(base_dir, 'interaction_matrix', f'predictor_{sensor}x{sensor}_IM{ASSET_TAG}.h5')
+
+# Noisy WFS (--wfs_noise): detector of the CorrelatingShackHartmann defaults (pco.dimax), dark not subtracted (darkCalibration 0: the
+# SAOS dark subtraction wraps negative values in the uint16 cast); the photon level is set with lightRatio
+NOISE_KWARGS = dict(darkCalibration=0)
 
 # Profile 1 of the mcaobenchcodes studies (dmRotation SCAO/MCAO6, imageQuality), draw 1
 MCAO_PROFILE1 = {'r0': 0.09, 'L0': 25, 'zenith': 15, 'fractionalR0': [0.53, 0.37, 0.05, 0.03, 0.02], 'altitude': [100, 1500, 5000, 10000, 15000],
@@ -50,30 +67,74 @@ def get_asset_dirs(base_dir):
     return _first_existing('MirrorModels', base_dir), _first_existing('VibrationsSource', base_dir)
 
 
-def make_telescope(logger):
-    return Telescope(diameter=4.149, resolution=200, centralObstruction=1.3 / 4.149, samplingTime=1 / FS, fov=60.0, logger=logger)
+def make_telescope(logger, fs=FS):
+    return Telescope(diameter=4.149, resolution=200, centralObstruction=1.3 / 4.149, samplingTime=1 / fs, fov=60.0, logger=logger)
 
 
-def build_optics(sensor, tel, mirror_models_dir, logger):
-    """Sun (WFS source), on-axis NGS (science), DM and a WFS factory for the 36x36 (ASM) or 50x50 (M7) configuration. Noiseless WFS."""
+def resampled_asset(path, fs, kind):
+    """
+    Copy of a 2 kHz asset at the loop rate fs (<name>_fs<fs>.h5 next to it, created the first time); the same path at 2 kHz.
+      kind 'dm'        : discrete state space of the DM, converted with the zero-order-hold equivalence (matrix log of the
+                         augmented [[A, B], [0, 1]] at Ts, matrix exponential at 1/fs), so the continuous response is kept
+      kind 'vibration' : vibration sequence sampled at t = n/fs (linear interpolation of the 2 kHz sequence)
+    """
+    if fs == FS:
+        return path
+    out = path.replace('.h5', f'_fs{fs:g}.h5')
+    if os.path.exists(out):
+        return out
+    import h5py
+    with h5py.File(path, 'r') as f:
+        ts = float(f['A' if kind == 'dm' else 'x_axis'].attrs['Ts'])
+        data = {k: f[k]['data'][()] for k in f.keys()}
+    if kind == 'dm':
+        from scipy.linalg import logm, expm
+        A, B = np.atleast_2d(data['A']), np.ravel(data['B'])
+        n = A.shape[0]
+        M = np.eye(n + 1)
+        M[:n, :n], M[:n, n] = A, B
+        L = logm(M)
+        if np.abs(L.imag).max() > 1e-9:
+            raise ValueError(f'resampled_asset - {path}: no real continuous equivalent')
+        Md = expm(L.real * (1 / fs) / ts)
+        data['A'], data['B'] = Md[:n, :n], Md[:n, n]
+        attrs_key = 'A'
+    else:
+        t_old = np.arange(len(data['x_axis'])) * ts
+        t_new = np.arange(0, t_old[-1], 1 / fs)
+        data = {k: np.interp(t_new, t_old, v) for k, v in data.items()}
+        attrs_key = 'x_axis'
+    with h5py.File(out, 'w') as f:
+        for k, v in data.items():
+            f.create_group(k).create_dataset('data', data=v)
+        f[attrs_key].attrs['Ts'] = 1 / fs
+        f.attrs['source'] = path
+    return out
+
+
+def build_optics(sensor, tel, mirror_models_dir, logger, fs=FS, light_ratio=None):
+    """Sun (WFS source), on-axis NGS (science), DM and a WFS factory for the 36x36 (ASM) or 50x50 (M7) configuration.
+    Noiseless WFS, or noisy with light_ratio (fraction of the photons that reach the WFS) if given."""
     if sensor == 36:
         sun = ExtendedSource(optBand='R', coordinates=[0, 0], nSubDirs=3, fov=9.269, subDir_margin=4.0, patch_padding=5.0, logger=logger)
         ngs = Source(magnitude=5, optBand='R4', coordinates=[0, 0], logger=logger)
         dm = DeformableMirror(telescope=tel, nActs=37, altitude=0, typeDM='radial', logger=logger,
-                              dynamicModel=os.path.join(mirror_models_dir, 'asm_discrete_model.h5'), validActThreshpercentage=0.7533)
+                              dynamicModel=resampled_asset(os.path.join(mirror_models_dir, 'asm_discrete_model.h5'), fs, 'dm'), validActThreshpercentage=0.7533)
         wfs_kw = dict(plate_scale=0.403, fieldOfView=9.269)
     elif sensor == 50:
         sun = ExtendedSource(optBand='V', coordinates=[0, 0], nSubDirs=3, fov=9.975, subDir_margin=4.0, patch_padding=5.0, logger=logger)
         ngs = Source(magnitude=5, optBand='V0', coordinates=[0, 0], logger=logger)
         dm = DeformableMirror(telescope=tel, nActs=51, altitude=0, typeDM='cartesian', logger=logger,
-                              dynamicModel=os.path.join(mirror_models_dir, 'm7_discrete_model.h5'), validActThreshpercentage=0.7533)
+                              dynamicModel=resampled_asset(os.path.join(mirror_models_dir, 'm7_discrete_model.h5'), fs, 'dm'), validActThreshpercentage=0.7533)
         wfs_kw = dict(plate_scale=0.475, fieldOfView=9.975)
     else:
         raise ValueError(f'Unknown sensor {sensor}')
 
     def make_wfs():
-        return CorrelatingShackHartmann(telescope=tel, src=sun, lightRatio=0.9, nSubap=sensor, guardPx=2, fft_fieldOfView_oversampling=0.5,
-                                        use_brightest=9, unit_in_rad=False, noiseFlag=False, logger=logger, **wfs_kw)
+        noise = {} if light_ratio is None else NOISE_KWARGS
+        return CorrelatingShackHartmann(telescope=tel, src=sun, lightRatio=0.9 if light_ratio is None else light_ratio, nSubap=sensor, guardPx=2,
+                                        fft_fieldOfView_oversampling=0.5, use_brightest=9, unit_in_rad=False, noiseFlag=light_ratio is not None,
+                                        logger=logger, **wfs_kw, **noise)
     return sun, ngs, dm, make_wfs
 
 
@@ -104,7 +165,7 @@ class PolControl:
         im_handler = InteractionMatrixHandler(logger)
         im_handler.initialize_im_class(lights_paths)
         im_handler.load_modalBasis(os.path.join(base_dir, 'modal_basis', f'predictor_{sensor}x{sensor}_modalBasis.h5'))
-        im_handler.load_IM(os.path.join(base_dir, 'interaction_matrix', f'predictor_{sensor}x{sensor}_IM.h5'))
+        im_handler.load_IM(im_file(base_dir, sensor))
         IM = im_handler.interaction_matrix_warehouse[0][0]['IM']
         controller = Controller(telescope=tel, interactionMatrix=im_handler, reconstructionMethod='tikhonov', controllerType='leaky', logger=logger,
                                 rcond=0.025, beta=beta, gain=[0.0], decay=[decay], ki=[0.0], nModes=[IM.shape[1]])

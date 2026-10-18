@@ -179,7 +179,7 @@ def fit_global_stencil(files, K=3, past_horizon=8, horizons=(2, 3, 4), device=No
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Fit the global stencil weights on the open-loop training data of the LSTM (atm1-4)')
-    parser.add_argument('--data_dir', default='/home/nlinares/simulations/results/predictorSAOS/training/training_val')
+    parser.add_argument('--data_dir', default='/home/nlinares/simulations/results/wfePredictor/v1/predictorSAOS/training/training_val')
     parser.add_argument('--atms', type=int, nargs='+', default=[1, 2, 3, 4])
     parser.add_argument('--K', type=int, default=3)
     parser.add_argument('--p', type=int, default=8)

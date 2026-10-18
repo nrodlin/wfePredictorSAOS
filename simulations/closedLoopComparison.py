@@ -1,14 +1,14 @@
 """
 Paired closed-loop comparison of control strategies on the same atmosphere (EST red arm SCAO, 2 kHz, Correlating SH on the sun).
 
-Cases (all with the same phase screens, DM, IM and delay; noiseless WFS, no vibrations):
+Cases (all with the same phase screens, DM, IM and delay; noiseless WFS or noisy with --wfs_noise; vibrations optional with --vibrations):
   integrator      leaky integrator on the residual slopes, c = g_int*(-R s_res) + decay*c (no POL)
   pol:<pred>      POL law c = g*(-R s_target - c) + decay*c, with s_target the prediction of the POL slopes by <pred>
                   (common.make_predictor names: zoh, linear, lstm_v1, lstm_v2[:tag], incAR:<file>, stencil_rls). All the POL cases
                   use the same gain g. While a predictor fills its buffer the target is s_pol (ZOH), so until then the POL cases are identical.
 
 Metric: on-axis residual OPD rms of an NGS light path (no science cameras). Results: one h5 per case in
-<base_dir>/results/closedLoopComparison/<run tag>/, plus summary table (csv) and figure (WFE vs iteration).
+<base_dir>/results/wfePredictor/v2/closedLoopComparison/<run tag>/, plus summary table (csv) and figure (WFE vs iteration).
 
 Usage:
   python closedLoopComparison.py                                   # 36x36, atm1 draw1, 500 it, POL g 0.4, integrator g 0.25
@@ -31,8 +31,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from SAOS.LoggingHelper import LoggingHelper
 from SAOS.LightPath import LightPath
+from SAOS.Vibration import Vibration
 
-from common import get_base_dir, get_asset_dirs, make_telescope, build_optics, load_atmosphere, PolControl, make_predictor, opd_rms_nm, MCAO_PROFILE1
+from common import get_base_dir, get_asset_dirs, make_telescope, resampled_asset, FS, build_optics, results_root, load_atmosphere, PolControl, make_predictor, opd_rms_nm, MCAO_PROFILE1
 from atmosphereCases import atm_cases
 
 DEFAULT_CASES = ['integrator', 'pol:zoh', 'pol:linear', 'pol:lstm_v1']
@@ -46,6 +47,11 @@ def parse_args():
     parser.add_argument('--atm', type=str, default='atm1', help="Validation atmosphere of atmosphereCases.py (ignored with --mcao_profile1)")
     parser.add_argument('--draw', type=str, default='draw1')
     parser.add_argument('--mcao_profile1', action='store_true', help="Profile 1 of mcaobenchcodes instead of a validation atmosphere")
+    parser.add_argument('--vibrations', action='store_true', help="Telescope vibrations EST_vibration_<atm>.h5 (atm1 for --mcao_profile1)")
+    parser.add_argument('--wind_scale', type=float, default=1.0, help="Multiply all the wind speeds (same seed, own phase-screen file)")
+    parser.add_argument('--wfs_noise', type=float, default=None, metavar='LIGHT_RATIO',
+                        help="Noisy WFS with this fraction of the photons (lightRatio); default: noiseless")
+    parser.add_argument('--fs', type=float, default=FS, help="Loop rate [Hz] (default 2000; DM models and vibrations resampled, same phase screens)")
     parser.add_argument('--n_iterations', type=int, default=500)
     parser.add_argument('--discard', type=int, default=100, help="Iterations discarded in the summary (default 100 = 0.05 s)")
     parser.add_argument('--gain', type=float, default=0.4, help="Gain of the POL law, the same for every POL case (default 0.4)")
@@ -64,14 +70,20 @@ def parse_args():
 
 def atmosphere_choice(args):
     """(name, parameters, phase-screen file name, seed). The validation cases keep the files and seeds of the first comparison."""
+    ws = getattr(args, 'wind_scale', 1.0)
+    suffix = f'_wind{ws}' if ws != 1 else ''
     if args.mcao_profile1:
-        return 'mcaoP1', MCAO_PROFILE1, 'ps_polpred_mcaoProfile1_draw1_seed2026.h5', 2026
-    seed = 100 * int(args.atm.replace('atm', '')) + int(args.draw.replace('draw', ''))
-    return f'{args.atm}_{args.draw}', atm_cases[args.atm][args.draw], f'ps_wfePredictor_mini_{args.atm}_{args.draw}.h5', seed
+        name, kw, ps, seed = 'mcaoP1', MCAO_PROFILE1, 'ps_polpred_mcaoProfile1_draw1_seed2026', 2026
+    else:
+        seed = 100 * int(args.atm.replace('atm', '')) + int(args.draw.replace('draw', ''))
+        name, kw, ps = f'{args.atm}_{args.draw}', atm_cases[args.atm][args.draw], f'ps_wfePredictor_mini_{args.atm}_{args.draw}'
+    if ws != 1:
+        kw = dict(kw, windSpeed=[v * ws for v in kw['windSpeed']])
+    return name + suffix, kw, ps + suffix + '.h5', seed
 
 
 def run_tag(args):
-    return (f"{args.sensor}x{args.sensor}_{atmosphere_choice(args)[0]}_noVibr_noNoise_{args.n_iterations}it_d{args.delay}_h{args.horizon}"
+    return (f"{args.sensor}x{args.sensor}_{atmosphere_choice(args)[0]}_{'Vibr' if args.vibrations else 'noVibr'}_{'noNoise' if args.wfs_noise is None else f'noise{args.wfs_noise:g}'}_{args.n_iterations}it_{f'fs{args.fs:g}_' if args.fs != FS else ''}d{args.delay}_h{args.horizon}"
             f"_polg{args.gain}_intg{args.int_gain}" + ('_test' if args.test else ''))
 
 
@@ -87,22 +99,26 @@ def run_case(case, args, res_dir, logger):
     if case != 'integrator' and not case.startswith('pol:'):
         raise ValueError(f'Unknown case {case}')
     base_dir = get_base_dir(args.base_dir)
-    mirror_models_dir, _ = get_asset_dirs(base_dir)
+    mirror_models_dir, vibrations_dir = get_asset_dirs(base_dir)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     s, d = args.sensor, args.delay
     gain = args.int_gain if case == 'integrator' else args.gain
     t_start = time.time()
 
-    tel = make_telescope(logger)
+    tel = make_telescope(logger, args.fs)
     _, atm_kw, ps_name, seed = atmosphere_choice(args)
     ps_path = os.path.join(base_dir, 'phase_screens', ps_name)
     atm = load_atmosphere(tel, atm_kw, ps_path, seed, logger)
-    sun, ngs, dm, make_wfs = build_optics(s, tel, mirror_models_dir, logger)
+    vibrations = None
+    if args.vibrations:
+        atm_idx = 1 if args.mcao_profile1 else int(args.atm.replace('atm', ''))
+        vibrations = Vibration(tel, resampled_asset(os.path.join(vibrations_dir, f'EST_vibration_{atm_idx if atm_idx <= 5 else 1}.h5'), args.fs, 'vibration'), logger)
+    sun, ngs, dm, make_wfs = build_optics(s, tel, mirror_models_dir, logger, args.fs, light_ratio=args.wfs_noise)
     wfs = make_wfs()
     lp_wfs = LightPath(logger)
-    lp_wfs.initialize_path(src=sun, atm=atm, tel=tel, dm=[dm], wfs=wfs, delay=d)
+    lp_wfs.initialize_path(src=sun, atm=atm, tel=tel, dm=[dm], wfs=wfs, vibration=vibrations, delay=d)
     lp_sci = LightPath(logger)
-    lp_sci.initialize_path(src=ngs, atm=atm, tel=tel, dm=[dm], wfs=None, delay=d)
+    lp_sci.initialize_path(src=ngs, atm=atm, tel=tel, dm=[dm], wfs=None, vibration=vibrations, delay=d)
     ctrl = PolControl(base_dir, s, [lp_wfs, lp_sci], dm, d, tel, logger, beta=args.beta, decay=args.decay, device=device)
     n_slopes = lp_wfs.slopes_1D.shape[0]
     predictor = None
@@ -188,9 +204,9 @@ def analyze(args, res_dir):
         r = res[case]
         ax.plot(r['wfe'], color=COLORS.get(case), lw=1.2, label=f"{case} (g {r['summary']['gain']}): {r['summary']['wfe_nm']:.1f} nm")
     ax.axvspan(0, args.discard, color='0.92', zorder=0)
-    ax.set_xlabel('Iteration (2 kHz)')
+    ax.set_xlabel(f'Iteration ({args.fs:g} Hz)')
     ax.set_ylabel('On-axis residual WFE [nm]')
-    ax.set_title(f'{args.sensor}x{args.sensor}, {atmosphere_choice(args)[0]}, no vibrations, no noise. Shaded: discarded')
+    ax.set_title(f'{args.sensor}x{args.sensor}, {atmosphere_choice(args)[0]}, {'vibrations' if args.vibrations else 'no vibrations'}, {'no noise' if args.wfs_noise is None else f'noise (light ratio {args.wfs_noise:g})'}. Shaded: discarded')
     ax.legend(frameon=False, fontsize=8)
     ax.grid(True, color='0.9')
     ax.spines[['right', 'top']].set_visible(False)
@@ -208,7 +224,7 @@ def main():
     if args.test:
         args.n_iterations, args.discard = 30, 5
     base_dir = get_base_dir(args.base_dir)
-    res_dir = os.path.join(base_dir, 'results', 'closedLoopComparison', run_tag(args))
+    res_dir = os.path.join(results_root(base_dir), 'closedLoopComparison', run_tag(args))
     os.makedirs(res_dir, exist_ok=True)
     if not args.analyze_only:
         log_helper = LoggingHelper(logging.INFO)      # keep the reference: the queue listener stops when it is deleted

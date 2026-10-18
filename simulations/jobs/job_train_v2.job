@@ -19,7 +19,7 @@ cd ~/code/wfePredictorSAOS/wfePredictorSAOS
 export PYTHONPATH=/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
 PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
 [ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
-DATA_DIR="/net/durum/scratch/$USER/simulations/results/predictor_dataset_v2"
+DATA_DIR="/net/durum/scratch/$USER/simulations/results/wfePredictor/v2/dataset"
 
 echo "=== Training v2 | $(hostname) $(date) ==="
 $PYTHON_CMD -u predictor/incrementARPredictor.py --files "$DATA_DIR/train/run_36x36_train_*.h5" --p 16 --horizons 1 2 3 4

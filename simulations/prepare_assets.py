@@ -23,7 +23,7 @@ from SAOS.LightPath import LightPath
 from SAOS.InteractionMatrixHandler import InteractionMatrixHandler
 from SAOS.ScienceCam import ScienceCam
 
-from common import get_base_dir, get_asset_dirs, make_telescope
+from common import get_base_dir, get_asset_dirs, make_telescope, im_file as common_im_file
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pre-generate Phase Screens, Modal Bases, and Interaction Matrices")
@@ -76,7 +76,7 @@ def prepare_all_assets(base_dir=None, force_modal=False, force_im=False, logger=
             'sensor': 36,
             'name': '36x36 (ASM 37x37 Radial)',
             'mb_file': os.path.join(mb_dir, 'predictor_36x36_modalBasis.h5'),
-            'im_file': os.path.join(im_dir, 'predictor_36x36_IM.h5'),
+            'im_file': common_im_file(base_dir, 36),
             'typeDM': 'radial',
             'nActs': 37,
             'validActThreshpercentage': 0.7533,
@@ -91,7 +91,7 @@ def prepare_all_assets(base_dir=None, force_modal=False, force_im=False, logger=
             'sensor': 50,
             'name': '50x50 (M7 51x51 Cartesian)',
             'mb_file': os.path.join(mb_dir, 'predictor_50x50_modalBasis.h5'),
-            'im_file': os.path.join(im_dir, 'predictor_50x50_IM.h5'),
+            'im_file': common_im_file(base_dir, 50),
             'typeDM': 'cartesian',
             'nActs': 51,
             'validActThreshpercentage': 0.7533,

@@ -15,7 +15,7 @@ Errors, all indexed by the atmosphere instant t:
 The total error measures directly what the aggregation of the POL and prediction errors should reproduce.
 Consistency check: LP1 at t must equal LP3 at t (same WFS, same atmosphere).
 
-Output (results/pol_prediction_errors/res_polpred_..._h5): per-iteration rms of every error and, unless --no-save-slopes, the
+Output (results/wfePredictor/v2/pol_prediction_errors/res_polpred_..._h5): per-iteration rms of every error and, unless --no-save-slopes, the
 slope time series aligned by instant (slopes/ol, slopes/ol_delayed, slopes/pol, pred_ol/<p>, pred_pol/<p>; NaN where not available).
 
 Phase screens: own seeded file per atmosphere (validation cases of atmosphereCases.py, or --mcao_profile1), generated the first time.
@@ -43,7 +43,7 @@ from SAOS.LoggingHelper import LoggingHelper
 from SAOS.Vibration import Vibration
 from SAOS.LightPath import LightPath
 
-from common import get_base_dir, get_asset_dirs, make_telescope, build_optics, load_atmosphere, PolControl, make_predictor, MCAO_PROFILE1
+from common import get_base_dir, get_asset_dirs, make_telescope, build_optics, load_atmosphere, PolControl, make_predictor, MCAO_PROFILE1, results_root, resampled_asset, FS
 from atmosphereCases import atm_cases
 
 
@@ -69,7 +69,10 @@ def parse_args():
     parser.add_argument('--no-save-slopes', dest='save_slopes', action='store_false', help="Do not save the slope time series")
     parser.add_argument('--base_dir', type=str, default=None)
     parser.add_argument('--skip_existing', action='store_true')
-    parser.add_argument('--results_subdir', default='pol_prediction_errors', help="Folder under <base_dir>/results (default pol_prediction_errors)")
+    parser.add_argument('--results_subdir', default=None, help="Folder under <base_dir>/results (default: wfePredictor/<campaign>/pol_prediction_errors)")
+    parser.add_argument('--wind_scale', type=float, default=1.0, help="Multiply all the wind speeds (same seed, own phase-screen file)")
+    parser.add_argument('--fs', type=float, default=FS, help="Loop rate [Hz] (default 2000; DM models and vibrations resampled)")
+    parser.add_argument('--wfs_noise', type=float, default=None, metavar='LIGHT_RATIO', help="Noisy WFS with this fraction of the photons (default: noiseless)")
     parser.add_argument('--test', action='store_true', help="100 iterations, atm1 draw1 noVibr, results in pol_prediction_errors_test")
     return parser.parse_args()
 
@@ -81,9 +84,11 @@ def rms(x):
 def run_case(args, atm_name, draw_name, kwargs, use_vibrations, base_dir, logger):
     sensor, d, h = args.sensor, args.delay, args.horizon
     vib_label = 'Vibr' if use_vibrations else 'noVibr'
-    res_dir = os.path.join(base_dir, 'results', args.results_subdir + ('_test' if args.test else ''))
+    res_dir = (os.path.join(base_dir, 'results', args.results_subdir) if args.results_subdir else os.path.join(results_root(base_dir), 'pol_prediction_errors')) + ('_test' if args.test else '')
+    scen = (f'_wind{args.wind_scale:g}' if args.wind_scale != 1 else '') + (f'_fs{args.fs:g}' if args.fs != FS else '') + \
+           (f'_noise{args.wfs_noise:g}' if args.wfs_noise is not None else '')
     os.makedirs(res_dir, exist_ok=True)
-    res_path = os.path.join(res_dir, f'res_polpred_{sensor}x{sensor}_{vib_label}_{atm_name}_{draw_name}_g{args.gain}_d{d}_h{h}.h5')
+    res_path = os.path.join(res_dir, f'res_polpred_{sensor}x{sensor}_{vib_label}{scen}_{atm_name}_{draw_name}_g{args.gain}_d{d}_h{h}.h5')
     if args.skip_existing and os.path.exists(res_path):
         logger.info(f'Skipping {os.path.basename(res_path)}: already exists')
         return
@@ -91,21 +96,23 @@ def run_case(args, atm_name, draw_name, kwargs, use_vibrations, base_dir, logger
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     t0 = time.time()
 
-    tel = make_telescope(logger)
+    tel = make_telescope(logger, args.fs)
+    if args.wind_scale != 1:
+        kwargs = dict(kwargs, windSpeed=[v * args.wind_scale for v in kwargs['windSpeed']])
     if args.mcao_profile1:
         seed = args.seed
-        atm_file = os.path.join(base_dir, 'phase_screens', f'ps_polpred_mcaoProfile1_{draw_name}_seed{seed}.h5')
+        atm_file = os.path.join(base_dir, 'phase_screens', f'ps_polpred_mcaoProfile1_{draw_name}_seed{seed}' + (f'_wind{args.wind_scale:g}' if args.wind_scale != 1 else '') + '.h5')
     else:
         seed = args.seed + 10 * int(atm_name.replace('atm', '')) + int(draw_name.replace('draw', ''))
-        atm_file = os.path.join(base_dir, 'phase_screens', f'ps_polpred_{atm_name}_{draw_name}_seed{seed}.h5')
+        atm_file = os.path.join(base_dir, 'phase_screens', f'ps_polpred_{atm_name}_{draw_name}_seed{seed}' + (f'_wind{args.wind_scale:g}' if args.wind_scale != 1 else '') + '.h5')
     # Own phase screens, generated once with the seed and shared by every sensor/run
     atm = load_atmosphere(tel, kwargs, atm_file, seed, logger)
     vibrations = None
     if use_vibrations:
         atm_idx = int(atm_name.replace('atm', '')) if atm_name.startswith('atm') else 1
-        vibrations = Vibration(tel, os.path.join(vibrations_dir, f'EST_vibration_{atm_idx if atm_idx <= 5 else 1}.h5'), logger)
+        vibrations = Vibration(tel, resampled_asset(os.path.join(vibrations_dir, f'EST_vibration_{atm_idx if atm_idx <= 5 else 1}.h5'), args.fs, 'vibration'), logger)
 
-    sun, _, dm, make_wfs = build_optics(sensor, tel, mirror_models_dir, logger)
+    sun, _, dm, make_wfs = build_optics(sensor, tel, mirror_models_dir, logger, args.fs, light_ratio=args.wfs_noise)
     # One WFS object shared by the three light paths (each LightPath keeps its own delay buffer and correlation reference)
     wfs = make_wfs()
     lp1, lp2, lp3 = LightPath(logger), LightPath(logger), LightPath(logger)
@@ -169,7 +176,7 @@ def run_case(args, atm_name, draw_name, kwargs, use_vibrations, base_dir, logger
     for p in PREDICTORS:
         series[f'pred_err_ol/{p}'] = err_t(p_ol[p])
         series[f'pred_err_pol/{p}'] = err_t(p_pol[p])
-    k0 = int(round(args.discard * 2000))
+    k0 = int(round(args.discard * args.fs))
     keep = np.arange(T) >= k0
 
     def summ(a):
@@ -194,7 +201,7 @@ def run_case(args, atm_name, draw_name, kwargs, use_vibrations, base_dir, logger
             for p in PREDICTORS:
                 f.create_dataset(f'pred_ol/{p}', data=p_ol[p], **opts)
                 f.create_dataset(f'pred_pol/{p}', data=p_pol[p], **opts)
-        f.attrs['config'] = json.dumps(dict(sensor=sensor, atm=atm_name, draw=draw_name, vibrations=use_vibrations, gain=args.gain, decay=args.decay,
+        f.attrs['config'] = json.dumps(dict(sensor=sensor, atm=atm_name, draw=draw_name, vibrations=use_vibrations, wind_scale=args.wind_scale, fs=args.fs, wfs_noise=args.wfs_noise, gain=args.gain, decay=args.decay,
                                             delay=d, horizon=h, beta=args.beta, linear_past=args.linear_past, n_iterations=T, discard_s=args.discard,
                                             phase_screens=atm_file, predictors=list(args.predictors)))
         f.attrs['summary'] = json.dumps(summary)

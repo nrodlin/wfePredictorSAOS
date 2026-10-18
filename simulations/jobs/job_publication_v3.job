@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH --job-name=wfePred_v3
+#SBATCH --output=wfePred_v3_%j.out
+#SBATCH --error=wfePred_v3_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=48
+#SBATCH --gres=gpu:1
+#SBATCH --time=12:30:00
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=nicolas.linares@iac.es
+# Publication campaign of the wavefront predictor, campaign v3 (SAOS WFS with partially illuminated subapertures, develop 3534fa7).
+# One job, one GPU (L40S, 48 GB) and 48 CPUs: simulations/campaign/runPublicationCampaign.py runs every stage with WORKERS simulations at
+# the same time on the GPU (THREADS CPU threads each): assets (IMs v3, phase screens, 700 Hz assets), smoke tests (stops on failure),
+# dataset v3 + gain scan, training (LSTM band and mse, incAR), choice of the baseline gains, closed loop (5 scenarios x 2 sensors x 15
+# atmospheres x 6 cases) and open loop (5 scenarios x 2 sensors x 5 atmospheres). Every stage skips what already exists: resubmit to
+# continue. Results in $BASE_DIR/results/wfePredictor/v3/, logs of every run in $BASE_DIR/results/logs/wfePredictor/v3/.
+#   sbatch job_publication_v3.job                                   (add -p <partition> if needed)
+#   sbatch --export=ALL,STAGES="cl ol" job_publication_v3.job        (only some stages)
+cd ~/code/wfePredictorSAOS/simulations/campaign
+export PYTHONPATH=/home/nlinares/code/SAOS:/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
+export WFEPRED_CAMPAIGN=v3
+PYTHON_CMD="/home/nlinares/.pyenv/versions/3.13.9t/envs/saos/bin/python"
+[ -f "$PYTHON_CMD" ] || PYTHON_CMD="python3"
+BASE_DIR=${BASE_DIR:-"/net/durum/scratch/$USER/simulations"}
+STAGES=${STAGES:-all}
+WORKERS=${WORKERS:-12}
+THREADS=${THREADS:-4}
+echo "=== wfePredictor campaign v3 | $(hostname) | $(date) | stages $STAGES | $WORKERS workers x $THREADS threads | base $BASE_DIR ==="
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+$PYTHON_CMD -u runPublicationCampaign.py --stages $STAGES --workers $WORKERS --threads $THREADS --base_dir "$BASE_DIR"
+echo "=== Finished $(date) ==="

@@ -29,7 +29,7 @@ from scipy.signal import firwin
 from wfePredictorSAOS.predictor.incrementalLSTM import IncrementalSlopeLSTM
 
 WEIGHTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'weights')
-DATA_DIR = os.path.join(os.path.expanduser('~'), 'simulations', 'results', 'predictor_dataset_v2')
+DATA_DIR = os.path.join(os.path.expanduser('~'), 'simulations', 'results', 'wfePredictor', 'v2', 'dataset')
 
 
 def parse_args():

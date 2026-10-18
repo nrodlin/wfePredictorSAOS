@@ -13,7 +13,7 @@
 # Dataset v2 of the predictor (generateTrainingData.py), 2000 iterations per run, random conditions drawn from the seed.
 # Each array task runs PARALLEL runs at the same time on its GPU (one run uses ~45 % of the GPU and 1.6 GB): indices
 # TASK_ID .. TASK_ID+PARALLEL-1, so the array step must equal PARALLEL. ~10-15 min per 36x36 run, ~30 min per 50x50 run.
-# Results in $BASE_DIR/results/predictor_dataset_v2/<split>/.
+# Results in $BASE_DIR/results/wfePredictor/v2/dataset/<split>/.
 #   sbatch job_dataset_v2.job                                                    train, 36x36, 48 runs (16 tasks x 3)
 #   sbatch --array=0-7:4 --export=ALL,SPLIT=val,PARALLEL=4 job_dataset_v2.job        validation, 36x36, 8 runs
 #   sbatch --array=0-7:4 --export=ALL,SPLIT=test,PARALLEL=4 job_dataset_v2.job       test, 36x36, 8 runs
