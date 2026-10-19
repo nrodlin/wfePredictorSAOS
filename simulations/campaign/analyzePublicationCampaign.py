@@ -21,6 +21,7 @@ Output in <results>/analysis: cl_runs.csv (one row per run), cl_stats.csv, cl_st
 figures cl_relative.png/pdf, cl_vs_tau0.png/pdf, ol_skill.png/pdf.
 
 Usage: WFEPRED_CAMPAIGN=v3 python analyzePublicationCampaign.py [--base_dir ~/simulations]
+       WFEPRED_CAMPAIGN=v3 python analyzePublicationCampaign.py --pol-gain S1_50=0.5 S2_50=0.5 S3_50=0.5 --out-tag _polg0.5_50
 """
 import os
 import sys
@@ -76,6 +77,18 @@ def tau0(atm, draw, wind_scale):
     return 0.314 * kw['los_r0'] / v_eff, kw['los_r0'], v_eff
 
 
+def select_pol_gain(df, choice):
+    """Keep, for every scenario x sensor, the POL runs of one POL gain: the one in choice ({'S1_50': 0.5}) or else the most frequent.
+    The integrator does not depend on the POL gain: one run per atmosphere."""
+    keep = []
+    for (sc, s), g in df.groupby(['scenario', 'sensor']):
+        pol = g[g.case != 'integrator']
+        gp = choice.get(f'{sc}_{s}', pol.pol_gain.mode().iloc[0])
+        keep.append(pol[np.isclose(pol.pol_gain, gp)])
+        keep.append(g[g.case == 'integrator'].drop_duplicates(['atm', 'draw']))
+    return pd.concat(keep, ignore_index=True)
+
+
 def load_cl(root):
     rows = []
     for d in sorted(glob.glob(os.path.join(root, 'closedLoopComparison', '*_1000it_*'))):
@@ -87,7 +100,7 @@ def load_cl(root):
             t0, r0, v = tau0(cfg['atm'], cfg['draw'], cfg['wind_scale'])
             div = bool(sm['diverged']) or not np.isfinite(sm['wfe_nm']) or sm['wfe_nm'] > DIVERGED_NM
             rows.append(dict(scenario=scenario(cfg), sensor=cfg['sensor'], atm=cfg['atm'], draw=cfg['draw'], case=short_case(sm['case']),
-                             gain=sm['gain'], wfe_nm=np.inf if div else sm['wfe_nm'], diverged=div,
+                             gain=sm['gain'], pol_gain=cfg['gain'], wfe_nm=np.inf if div else sm['wfe_nm'], diverged=div,
                              los_r0_cm=100 * r0, v_eff=v, tau0_ms=1e3 * t0, scan_atm=(cfg['atm'], cfg['draw']) in SCAN))
     return pd.DataFrame(rows)
 
@@ -274,12 +287,16 @@ def latex_table(st, path):
 def main():
     parser = argparse.ArgumentParser(description='Statistics of the publication campaign')
     parser.add_argument('--base_dir', default=os.path.expanduser('~/simulations'))
+    parser.add_argument('--pol-gain', nargs='+', default=[], help='POL gain per scenario_sensor, e.g. S1_50=0.5 (default: the most frequent)')
+    parser.add_argument('--out-tag', default='', help='Suffix of the output folder analysis<tag>')
     args = parser.parse_args()
     root = common.results_root(args.base_dir)
-    out = os.path.join(root, 'analysis')
+    out = os.path.join(root, 'analysis' + args.out_tag)
+    choice = {k: float(v) for k, v in (x.split('=') for x in args.pol_gain)}
     os.makedirs(out, exist_ok=True)
 
-    df = load_cl(root)
+    df = select_pol_gain(load_cl(root), choice)
+    print('POL gain per scenario x sensor: ' + ', '.join(f'{sc}_{s} {g.pol_gain.iloc[0]:g}' for (sc, s), g in df[df.case != 'integrator'].groupby(['scenario', 'sensor'])))
     df.to_csv(os.path.join(out, 'cl_runs.csv'), index=False)
     n = df.groupby(['scenario', 'sensor', 'case']).size()
     print(f'Closed loop: {len(df)} runs, {n.min()}-{n.max()} atmospheres per scenario x sensor x controller')

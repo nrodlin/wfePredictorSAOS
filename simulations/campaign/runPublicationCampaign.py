@@ -250,7 +250,8 @@ def load_gains(base):
         return json.load(f)
 
 
-def cl_tasks(base, gains, combos=None, cases=None):
+def cl_tasks(base, gains, combos=None, cases=None, pol_gain=None):
+    """pol_gain: POL gain of every run instead of the chosen one (e.g. a lower, stable gain for the predictors); own task/log names."""
     tasks = []
     cases = cases or ['integrator', *PREDICTOR_CASES]
     for sname, sc in SCENARIOS.items():
@@ -260,8 +261,10 @@ def cl_tasks(base, gains, combos=None, cases=None):
             g = gains[f'{sname}_{s}']
             for atm in ATMS:
                 for draw in DRAWS:
-                    tasks.append((f'cl_{sname}_{s}_{atm}_{draw}', [PY, '-u', 'closedLoopComparison.py', '--sensor', str(s), '--atm', atm, '--draw', draw,
-                                  '--cases', *cases, '--int_gain', str(g['integrator']['best']), '--gain', str(g['pol_zoh']['best']),
+                    gp = g['pol_zoh']['best'] if pol_gain is None else pol_gain
+                    tasks.append((f'cl_{sname}_{s}_{atm}_{draw}' + (f'_polg{pol_gain:g}' if pol_gain is not None else ''),
+                                  [PY, '-u', 'closedLoopComparison.py', '--sensor', str(s), '--atm', atm, '--draw', draw,
+                                  '--cases', *cases, '--int_gain', str(g['integrator']['best']), '--gain', str(gp),
                                   '--n_iterations', '1000', '--discard', '200', '--base_dir', base, '--skip_existing'] + scenario_args(sc)))
     return tasks
 
@@ -295,6 +298,7 @@ def main():
     parser.add_argument('--pol-gains', nargs='+', type=float, default=list(POL_GAINS), help='POL (ZOH) gains of the scan / choice')
     parser.add_argument('--combos', nargs='+', default=None, help='Only these scenario_sensor combinations in gains and cl, e.g. S2_50 S4_36')
     parser.add_argument('--cl-cases', nargs='+', default=None, help='Closed-loop cases to run (default: integrator and every POL case)')
+    parser.add_argument('--cl-pol-gain', type=float, default=None, help='POL gain of the closed-loop runs instead of gains.json (with --combos)')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     base = common.get_base_dir(args.base_dir)
@@ -324,7 +328,7 @@ def main():
     if ('cl' in stages or 'ol' in stages) and gains is None:
         gains = load_gains(base) if not args.dry_run else {f'{a}_{s}': {'integrator': {'best': 0.25}, 'pol_zoh': {'best': 0.4}} for a in SCENARIOS for s in SENSORS}
     if 'cl' in stages:
-        t = cl_tasks(base, gains, args.combos, args.cl_cases)
+        t = cl_tasks(base, gains, args.combos, args.cl_cases, args.cl_pol_gain)
         print(f'== closed loop: {len(t)} runs', flush=True)
         run_tasks(t, args.workers, logs, args.threads, args.dry_run)
     if 'ol' in stages:
