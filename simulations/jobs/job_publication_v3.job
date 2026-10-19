@@ -16,6 +16,7 @@
 # continue. Results in $BASE_DIR/results/wfePredictor/v3/, logs of every run in $BASE_DIR/results/logs/wfePredictor/v3/.
 #   sbatch job_publication_v3.job                                   (add -p <partition> if needed)
 #   sbatch --export=ALL,STAGES="cl ol" job_publication_v3.job        (only some stages)
+#   sbatch --export=ALL,STAGES="gains choose cl",EXTRA="--int-gains 0.15 0.25 0.35 0.5 0.6 0.7 --combos S2_50 S4_36 --cl-cases integrator" job_publication_v3.job
 cd ~/code/wfePredictorSAOS/simulations/campaign
 export PYTHONPATH=/home/nlinares/code/SAOS:/home/nlinares/code/wfePredictorSAOS:$PYTHONPATH
 export WFEPRED_CAMPAIGN=v3
@@ -25,7 +26,8 @@ BASE_DIR=${BASE_DIR:-"/net/durum/scratch/$USER/simulations"}
 STAGES=${STAGES:-all}
 WORKERS=${WORKERS:-12}
 THREADS=${THREADS:-4}
+EXTRA=${EXTRA:-""}                    # extra options of runPublicationCampaign.py (e.g. --int-gains ... --combos ...)
 echo "=== wfePredictor campaign v3 | $(hostname) | $(date) | stages $STAGES | $WORKERS workers x $THREADS threads | base $BASE_DIR ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-$PYTHON_CMD -u runPublicationCampaign.py --stages $STAGES --workers $WORKERS --threads $THREADS --base_dir "$BASE_DIR"
+$PYTHON_CMD -u runPublicationCampaign.py --stages $STAGES --workers $WORKERS --threads $THREADS --base_dir "$BASE_DIR" $EXTRA
 echo "=== Finished $(date) ==="

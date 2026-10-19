@@ -170,17 +170,19 @@ def dataset_tasks(base):
             for split, n in (('train', 48), ('val', 8)) for i in range(n)]
 
 
-def gain_tasks(base):
+def gain_tasks(base, int_gains=INT_GAINS, pol_gains=POL_GAINS, combos=None):
     tasks = []
     for sname, sc in SCENARIOS.items():
         for s in SENSORS:
+            if combos and f'{sname}_{s}' not in combos:
+                continue
             for atm in SCAN_ATMS:
                 common_args = ['--sensor', str(s), '--atm', atm, '--draw', 'draw1', '--n_iterations', '600', '--discard', '200',
                                '--base_dir', base, '--skip_existing'] + scenario_args(sc)
-                for g in INT_GAINS:
+                for g in int_gains:
                     tasks.append((f'gains_{sname}_{s}_{atm}_int{g}', [PY, '-u', 'closedLoopComparison.py', '--cases', 'integrator',
                                                                     '--int_gain', str(g)] + common_args))
-                for g in POL_GAINS:
+                for g in pol_gains:
                     tasks.append((f'gains_{sname}_{s}_{atm}_pol{g}', [PY, '-u', 'closedLoopComparison.py', '--cases', 'pol:zoh',
                                                                     '--gain', str(g)] + common_args))
     return tasks
@@ -222,12 +224,12 @@ def scan_wfe(base, sname, s, case, gain_key, g):
     return float(np.mean(vals))
 
 
-def stage_choose(base):
+def stage_choose(base, int_gains=INT_GAINS, pol_gains=POL_GAINS):
     out = {}
     for sname in SCENARIOS:
         for s in SENSORS:
             row = {}
-            for case, key, grid in (('integrator', 'intg', INT_GAINS), ('pol_zoh', 'polg', POL_GAINS)):
+            for case, key, grid in (('integrator', 'intg', int_gains), ('pol_zoh', 'polg', pol_gains)):
                 w = {g: scan_wfe(base, sname, s, case, key, g) for g in grid}
                 ok = {g: v for g, v in w.items() if v is not None and np.isfinite(v)}
                 row[case] = dict(best=min(ok, key=ok.get) if ok else None, wfe_nm={str(g): v for g, v in w.items()})
@@ -235,6 +237,8 @@ def stage_choose(base):
             print(f"  {sname} {s}x{s}: integrator best g {row['integrator']['best']} | POL best g {row['pol_zoh']['best']}", flush=True)
     path = os.path.join(common.results_root(base), 'campaign', 'gains.json')
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):                       # keep the previous choice
+        os.replace(path, path.replace('.json', time.strftime('_%Y%m%d_%H%M%S.json')))
     with open(path, 'w') as f:
         json.dump(out, f, indent=1)
     print(f'  saved {path}', flush=True)
@@ -246,15 +250,18 @@ def load_gains(base):
         return json.load(f)
 
 
-def cl_tasks(base, gains):
+def cl_tasks(base, gains, combos=None, cases=None):
     tasks = []
+    cases = cases or ['integrator', *PREDICTOR_CASES]
     for sname, sc in SCENARIOS.items():
         for s in SENSORS:
+            if combos and f'{sname}_{s}' not in combos:
+                continue
             g = gains[f'{sname}_{s}']
             for atm in ATMS:
                 for draw in DRAWS:
                     tasks.append((f'cl_{sname}_{s}_{atm}_{draw}', [PY, '-u', 'closedLoopComparison.py', '--sensor', str(s), '--atm', atm, '--draw', draw,
-                                  '--cases', 'integrator', *PREDICTOR_CASES, '--int_gain', str(g['integrator']['best']), '--gain', str(g['pol_zoh']['best']),
+                                  '--cases', *cases, '--int_gain', str(g['integrator']['best']), '--gain', str(g['pol_zoh']['best']),
                                   '--n_iterations', '1000', '--discard', '200', '--base_dir', base, '--skip_existing'] + scenario_args(sc)))
     return tasks
 
@@ -284,6 +291,10 @@ def main():
     parser.add_argument('--workers', type=int, default=12, help='Simulations at the same time on the GPU (default 12)')
     parser.add_argument('--threads', type=int, default=4, help='CPU threads per simulation (default 4)')
     parser.add_argument('--base_dir', default=None)
+    parser.add_argument('--int-gains', nargs='+', type=float, default=list(INT_GAINS), help='Integrator gains of the scan / choice')
+    parser.add_argument('--pol-gains', nargs='+', type=float, default=list(POL_GAINS), help='POL (ZOH) gains of the scan / choice')
+    parser.add_argument('--combos', nargs='+', default=None, help='Only these scenario_sensor combinations in gains and cl, e.g. S2_50 S4_36')
+    parser.add_argument('--cl-cases', nargs='+', default=None, help='Closed-loop cases to run (default: integrator and every POL case)')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     base = common.get_base_dir(args.base_dir)
@@ -298,7 +309,7 @@ def main():
         print(f'== smoke tests: {len(t)} short runs', flush=True)
         run_tasks(t, args.workers, logs, args.threads, args.dry_run, abort_on_failure=True)
     # The dataset and the gain scan are independent: one pool for both
-    pool = (dataset_tasks(base) if 'dataset' in stages else []) + (gain_tasks(base) if 'gains' in stages else [])
+    pool = (dataset_tasks(base) if 'dataset' in stages else []) + (gain_tasks(base, args.int_gains, args.pol_gains, args.combos) if 'gains' in stages else [])
     if pool:
         print(f'== dataset + gains: {len(pool)} runs', flush=True)
         run_tasks(pool, args.workers, logs, args.threads, args.dry_run)
@@ -309,12 +320,12 @@ def main():
     gains = None
     if 'choose' in stages and not args.dry_run:
         print('== choose gains', flush=True)
-        gains = stage_choose(base)
+        gains = stage_choose(base, args.int_gains, args.pol_gains)
     if ('cl' in stages or 'ol' in stages) and gains is None:
         gains = load_gains(base) if not args.dry_run else {f'{a}_{s}': {'integrator': {'best': 0.25}, 'pol_zoh': {'best': 0.4}} for a in SCENARIOS for s in SENSORS}
     if 'cl' in stages:
-        t = cl_tasks(base, gains)
-        print(f'== closed loop: {len(t)} runs ({len(PREDICTOR_CASES) + 1} cases each)', flush=True)
+        t = cl_tasks(base, gains, args.combos, args.cl_cases)
+        print(f'== closed loop: {len(t)} runs', flush=True)
         run_tasks(t, args.workers, logs, args.threads, args.dry_run)
     if 'ol' in stages:
         t = ol_tasks(base, gains)
